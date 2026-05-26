@@ -156,7 +156,7 @@ export default function SettingsClient({ profile, socialAccounts, teamMembers, c
     finally { setSavingProfile(false) }
   }
 
-  async function createClient() {
+  async function submitNewClient() {
     setCreatingClient(true)
     try {
       // Create auth user
@@ -383,7 +383,7 @@ export default function SettingsClient({ profile, socialAccounts, teamMembers, c
                           </div>
                         ))}
                       </div>
-                      <button onClick={createClient} disabled={creatingClient} className="btn-orange w-full justify-center py-3">
+                      <button onClick={submitNewClient} disabled={creatingClient} className="btn-orange w-full justify-center py-3">
                         {creatingClient ? '⏳ Creating...' : '✓ Create Client & Send Credentials'}
                       </button>
                     </div>
