@@ -71,13 +71,17 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
       })
       if (error) throw error
 
-      // Update usage
-      const thisMonth = new Date().toISOString().slice(0, 7)
-      await supabase.rpc('increment_usage', {
-        p_client_id: clientId,
-        p_month: thisMonth,
-        p_type: creativeType === 'video' ? 'video' : 'image',
-      }).catch(() => {}) // don't block if RPC not set up yet
+      // Update usage — wrapped so a missing RPC doesn't block save
+      try {
+        const thisMonth = new Date().toISOString().slice(0, 7)
+        await supabase.rpc('increment_usage', {
+          p_client_id: clientId,
+          p_month: thisMonth,
+          p_type: creativeType === 'video' ? 'video' : 'image',
+        })
+      } catch {
+        // RPC not set up yet — ignore
+      }
 
       router.push('/creatives')
       router.refresh()
