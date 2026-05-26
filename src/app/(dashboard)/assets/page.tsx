@@ -1,9 +1,9 @@
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Topbar from '@/components/layout/Topbar'
-import PostsClient from '@/components/posts/PostsClient'
+import AssetLibraryClient from '@/components/assets/AssetLibraryClient'
 
-export default async function PostsPage() {
+export default async function AssetsPage() {
   const supabase = await createServerSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -18,44 +18,32 @@ export default async function PostsPage() {
 
   const clientFilter = profile.role === 'client_admin' ? { client_id: profile.client_id } : {}
 
-  const [{ data: posts }, { data: socialAccounts }, { data: creatives }, { data: contents }] = await Promise.all([
-    supabase.from('ad_posts')
-      .select('*')
-      .match(clientFilter)
-      .order('created_at', { ascending: false }),
-    supabase.from('ad_social_accounts')
-      .select('*')
-      .match(clientFilter)
-      .eq('is_active', true),
-    supabase.from('ad_creatives')
-      .select('id, type, source, asset_url, thumbnail_url')
-      .match(clientFilter)
-      .eq('status', 'ready')
-      .limit(20),
-    supabase.from('ad_content')
-      .select('id, title, caption, hook, hashtags')
-      .match(clientFilter)
-      .eq('status', 'approved')
-      .limit(20),
-  ])
+  const { data: assets } = await supabase
+    .from('client_assets')
+    .select('*')
+    .match(clientFilter)
+    .order('created_at', { ascending: false })
+
+  // Storage used (sum of file sizes)
+  const storageUsed = assets?.reduce((sum, a) => sum + (a.file_size_bytes ?? 0), 0) ?? 0
+  const storageGB = (storageUsed / (1024 ** 3)).toFixed(2)
 
   const initials = (profile.full_name ?? 'KR').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <Topbar
-        title="Posts"
+        title="Asset Library"
         role={profile.role}
         plan={profile.clients?.ads_plan ?? undefined}
         userInitials={initials}
       />
       <div className="flex-1 overflow-hidden flex">
-        <PostsClient
-          posts={posts ?? []}
-          socialAccounts={socialAccounts ?? []}
-          creatives={creatives ?? []}
-          contents={contents ?? []}
+        <AssetLibraryClient
+          assets={assets ?? []}
           clientId={profile.client_id ?? profile.id}
+          storageUsedGB={Number(storageGB)}
+          storageMaxGB={5}
         />
       </div>
     </div>
