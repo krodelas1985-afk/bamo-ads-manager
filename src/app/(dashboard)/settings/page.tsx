@@ -58,6 +58,7 @@ export default async function SettingsPage() {
           limits={limits}
           clients={clients ?? []}
           plan={plan}
+          planStarted={profile.clients?.ads_plan_started_at ?? null}
         />
       </div>
     </div>
