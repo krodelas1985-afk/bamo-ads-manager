@@ -3,8 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, FileText, Image, Megaphone, Building,
-  Files, Send, BarChart2, Globe, Bell, Settings, LogOut,
-  BuildingCommunity, Users
+  Files, Send, BarChart2, Globe, Bell, Settings, LogOut
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 
