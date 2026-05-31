@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { Wand2, Sparkles, Building, Save, Image as ImageIcon } from 'lucide-react'
+import { Wand2, Sparkles, Building, Save, Image as ImageIcon, Globe, ChevronDown } from 'lucide-react'
+import MarketplacePicker, { type MarketplaceListing } from './MarketplacePicker'
 
 const PLATFORMS = ['facebook', 'instagram', 'linkedin']
 const TONES = ['professional', 'casual', 'urgent', 'aspirational']
@@ -20,6 +21,8 @@ interface ContentFormProps {
   listings: Listing[]
 }
 
+type ListingSource = 'local' | 'marketplace'
+
 export default function ContentForm({ clientId, listings }: ContentFormProps) {
   const router = useRouter()
   const supabase = createClient()
@@ -29,6 +32,9 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
   const [audience, setAudience] = useState('')
   const [topic, setTopic] = useState('')
   const [selectedListing, setSelectedListing] = useState<Listing | null>(listings[0] ?? null)
+  const [listingSource, setListingSource] = useState<ListingSource>('local')
+  const [marketplaceListing, setMarketplaceListing] = useState<MarketplaceListing | null>(null)
+  const [showMarketplacePicker, setShowMarketplacePicker] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [generated, setGenerated] = useState<{
@@ -40,27 +46,20 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
   const [editCaption, setEditCaption] = useState('')
   const [editHook, setEditHook] = useState('')
 
+  const activeListing = listingSource === 'marketplace' && marketplaceListing
+    ? {
+        id: marketplaceListing.marketplace_id,
+        property_name: marketplaceListing.property_name,
+        price: marketplaceListing.price,
+        city: marketplaceListing.city,
+        property_type: marketplaceListing.property_type,
+      }
+    : selectedListing
+
   async function handleGenerate() {
     setGenerating(true)
     try {
-      const prompt = `You are a real estate marketing expert for the Philippine market.
-Generate social media content for a ${platform} post.
-
-Property: ${selectedListing?.property_name ?? 'Property'} in ${selectedListing?.city ?? 'Philippines'}
-Price: ₱${selectedListing?.price?.toLocaleString() ?? 'Contact for price'}
-Type: ${selectedListing?.property_type ?? 'Property'}
-Tone: ${tone}
-Target audience: ${audience || 'Filipino homebuyers and investors'}
-Focus: ${topic || 'Highlight key property features and call to action'}
-
-Return ONLY a JSON object with exactly these keys:
-{
-  "hook": "attention-grabbing opening line in Filipino/English mix",
-  "caption": "full post caption 3-4 paragraphs with emojis, key features and benefits",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5", "hashtag6"],
-  "cta": "short call to action text"
-}
-No markdown, no explanation, just the JSON.`
+      const prompt = `You are a real estate marketing expert for the Philippine market.\nGenerate social media content for a ${platform} post.\n\nProperty: ${activeListing?.property_name ?? 'Property'} in ${activeListing?.city ?? 'Philippines'}\nPrice: ₱${activeListing?.price?.toLocaleString() ?? 'Contact for price'}\nType: ${activeListing?.property_type ?? 'Property'}\nTone: ${tone}\nTarget audience: ${audience || 'Filipino homebuyers and investors'}\nFocus: ${topic || 'Highlight key property features and call to action'}\n\nReturn ONLY a JSON object with exactly these keys:\n{\n  "hook": "attention-grabbing opening line in Filipino/English mix",\n  "caption": "full post caption 3-4 paragraphs with emojis, key features and benefits",\n  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5", "hashtag6"],\n  "cta": "short call to action text"\n}\nNo markdown, no explanation, just the JSON.`
 
       const response = await fetch('/api/generate-content', {
         method: 'POST',
@@ -75,11 +74,10 @@ No markdown, no explanation, just the JSON.`
       setEditHook(data.hook)
     } catch (err) {
       console.error(err)
-      // Fallback sample
       const sample = {
-        hook: `Ang dream home mo sa ${selectedListing?.city ?? 'Pilipinas'} — handa ka na ba? 🏡`,
-        caption: `Introducing a stunning ${selectedListing?.property_name ?? 'property'} — perfect for growing families, OFW investors, and first-time homebuyers.\n\n✅ Ready for occupancy\n✅ Prime location\n✅ Flexible payment terms available`,
-        hashtags: [`#${selectedListing?.city?.replace(/\s/g, '') ?? 'PH'}RealEstate`, '#CondoForSale', '#OFWInvestment', '#BaMo', '#PHProperty', '#DreamHome'],
+        hook: `Ang dream home mo sa ${activeListing?.city ?? 'Pilipinas'} — handa ka na ba? 🏡`,
+        caption: `Introducing a stunning ${activeListing?.property_name ?? 'property'} — perfect for growing families, OFW investors, and first-time homebuyers.\n\n✅ Ready for occupancy\n✅ Prime location\n✅ Flexible payment terms available`,
+        hashtags: [`#${activeListing?.city?.replace(/\s/g, '') ?? 'PH'}RealEstate`, '#CondoForSale', '#OFWInvestment', '#BaMo', '#PHProperty', '#DreamHome'],
         cta: '💬 Message us now for a free site visit!',
       }
       setGenerated(sample)
@@ -94,6 +92,35 @@ No markdown, no explanation, just the JSON.`
     if (!generated && !editCaption) return
     setSaving(true)
     try {
+      let resolvedListingId: string | null = selectedListing?.id ?? null
+      if (listingSource === 'marketplace' && marketplaceListing) {
+        const { data: upserted } = await supabase
+          .from('ad_listings')
+          .upsert({
+            client_id: clientId,
+            marketplace_listing_id: marketplaceListing.marketplace_id,
+            property_name: marketplaceListing.property_name,
+            property_type: marketplaceListing.property_type,
+            description: marketplaceListing.description,
+            price: marketplaceListing.price,
+            city: marketplaceListing.city,
+            location: marketplaceListing.location,
+            bedrooms: marketplaceListing.bedrooms,
+            bathrooms: marketplaceListing.bathrooms,
+            floor_area: marketplaceListing.floor_area,
+            lot_area: marketplaceListing.lot_area,
+            primary_photo_url: marketplaceListing.primary_photo_url,
+            listing_url: marketplaceListing.listing_url,
+            agent_name: marketplaceListing.agent_name,
+            agent_prc_number: marketplaceListing.agent_prc_number,
+            agent_email: marketplaceListing.agent_email,
+            agent_phone: marketplaceListing.agent_phone,
+          }, { onConflict: 'client_id,marketplace_listing_id' })
+          .select('id')
+          .single()
+        resolvedListingId = upserted?.id ?? null
+      }
+
       const { error } = await supabase.from('ad_content').insert({
         client_id: clientId,
         platform,
@@ -104,7 +131,7 @@ No markdown, no explanation, just the JSON.`
         hashtags: generated?.hashtags ?? [],
         cta: generated?.cta ?? null,
         ai_generated: !!generated,
-        listing_id: selectedListing?.id ?? null,
+        listing_id: resolvedListingId,
         status,
       })
       if (error) throw error
@@ -136,9 +163,7 @@ No markdown, no explanation, just the JSON.`
           {/* Let BaMo Decide banner */}
           <div className="bg-[#1A2E5A] rounded-xl p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-white/15 rounded-lg flex items-center justify-center text-white">
-                🤖
-              </div>
+              <div className="w-9 h-9 bg-white/15 rounded-lg flex items-center justify-center text-white">🤖</div>
               <div>
                 <div className="text-sm font-semibold text-white">Let BaMo Decide</div>
                 <div className="text-[11px] text-white/60 mt-0.5">BaMo generates everything from your listing</div>
@@ -161,29 +186,100 @@ No markdown, no explanation, just the JSON.`
             <div className="flex-1 h-px bg-black/8" />
           </div>
 
-          {/* Listing selector */}
-          {listings.length > 0 && (
-            <div>
-              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Listing</label>
-              <div className="flex items-center gap-3 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
-                <Building size={16} className="text-[#1A2E5A] flex-shrink-0" />
-                <select
-                  className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
-                  value={selectedListing?.id ?? ''}
-                  onChange={e => {
-                    const l = listings.find(l => l.id === e.target.value)
-                    setSelectedListing(l ?? null)
-                  }}
+          {/* Listing selector with source toggle */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-[#1A2E5A]">Listing</label>
+              <div className="flex items-center gap-1 bg-[#F4F5F7] rounded-lg p-0.5">
+                <button
+                  onClick={() => setListingSource('local')}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${
+                    listingSource === 'local'
+                      ? 'bg-white text-[#1A2E5A] shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
                 >
-                  {listings.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.property_name ?? 'Unnamed'} — {l.city} {l.price ? `· ₱${Number(l.price).toLocaleString()}` : ''}
-                    </option>
-                  ))}
-                </select>
+                  <Building size={9} className="inline mr-1" />My Listings
+                </button>
+                <button
+                  onClick={() => setListingSource('marketplace')}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${
+                    listingSource === 'marketplace'
+                      ? 'bg-white text-[#E8660A] shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <Globe size={9} className="inline mr-1" />Marketplace
+                </button>
               </div>
             </div>
-          )}
+
+            {/* Local listings dropdown */}
+            {listingSource === 'local' && (
+              listings.length > 0 ? (
+                <div className="flex items-center gap-3 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
+                  <Building size={16} className="text-[#1A2E5A] flex-shrink-0" />
+                  <select
+                    className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
+                    value={selectedListing?.id ?? ''}
+                    onChange={e => {
+                      const l = listings.find(l => l.id === e.target.value)
+                      setSelectedListing(l ?? null)
+                    }}
+                  >
+                    {listings.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.property_name ?? 'Unnamed'} — {l.city} {l.price ? `· ₱${Number(l.price).toLocaleString()}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="bg-[#F4F5F7] rounded-lg px-3 py-3 text-xs text-gray-400 text-center">
+                  No listings yet.{' '}
+                  <a href="/listings/new" className="text-[#E8660A] font-medium hover:underline">Add one</a>
+                  {' '}or switch to Marketplace.
+                </div>
+              )
+            )}
+
+            {/* Marketplace picker trigger */}
+            {listingSource === 'marketplace' && (
+              <div>
+                {marketplaceListing ? (
+                  <div className="flex items-center gap-3 bg-[#FDE8D8] border border-[#E8660A]/30 rounded-lg px-3 py-2.5">
+                    <Globe size={15} className="text-[#E8660A] flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-[#1A2E5A] truncate">
+                        {marketplaceListing.property_name ?? 'Unnamed'}
+                      </div>
+                      <div className="text-[10px] text-gray-500 truncate">
+                        {marketplaceListing.city} {marketplaceListing.price ? `· ₱${Number(marketplaceListing.price).toLocaleString()}` : ''} · bahaymo.com
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowMarketplacePicker(true)}
+                      className="text-[10px] text-[#E8660A] font-semibold hover:underline flex-shrink-0"
+                    >
+                      Change <ChevronDown size={10} className="inline" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowMarketplacePicker(true)}
+                    className="w-full flex items-center gap-3 bg-[#F4F5F7] border border-dashed border-[#1A2E5A]/20 rounded-lg px-3 py-2.5 hover:border-[#E8660A]/40 hover:bg-[#FDE8D8]/30 transition-colors"
+                  >
+                    <Globe size={16} className="text-[#E8660A] flex-shrink-0" />
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-[#1A2E5A]">Browse BaMo Marketplace</div>
+                      <div className="text-[10px] text-gray-400">Pick a listing from bahaymo.com</div>
+                    </div>
+                    <ChevronDown size={14} className="text-gray-400 ml-auto" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Platform */}
           <div>
@@ -194,9 +290,7 @@ No markdown, no explanation, just the JSON.`
                   key={p}
                   onClick={() => setPlatform(p)}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors ${
-                    platform === p
-                      ? 'bg-[#1A2E5A] text-white'
-                      : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                    platform === p ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
                   }`}
                 >
                   {p}
@@ -214,9 +308,7 @@ No markdown, no explanation, just the JSON.`
                   key={t}
                   onClick={() => setTone(t)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-colors ${
-                    tone === t
-                      ? 'bg-[#E8660A] text-white'
-                      : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                    tone === t ? 'bg-[#E8660A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
                   }`}
                 >
                   {t}
@@ -285,7 +377,6 @@ No markdown, no explanation, just the JSON.`
         ) : (
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
 
-            {/* Platform tabs */}
             <div className="flex gap-1.5">
               {PLATFORMS.map(p => (
                 <button
@@ -300,7 +391,6 @@ No markdown, no explanation, just the JSON.`
               ))}
             </div>
 
-            {/* Hook */}
             <div className="bg-[#F4F5F7] rounded-lg p-3">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Hook</div>
               <textarea
@@ -311,7 +401,6 @@ No markdown, no explanation, just the JSON.`
               />
             </div>
 
-            {/* Caption */}
             <div className="bg-[#F4F5F7] rounded-lg p-3">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Caption</div>
               <textarea
@@ -322,7 +411,6 @@ No markdown, no explanation, just the JSON.`
               />
             </div>
 
-            {/* Hashtags */}
             <div className="bg-[#F4F5F7] rounded-lg p-3">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Hashtags</div>
               <div className="flex flex-wrap gap-1.5">
@@ -332,33 +420,19 @@ No markdown, no explanation, just the JSON.`
               </div>
             </div>
 
-            {/* CTA */}
             <div className="bg-[#FDE8D8] rounded-lg p-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-[#E8660A]">{generated.cta}</span>
               <span className="text-[#E8660A]">→</span>
             </div>
 
-            {/* Actions */}
             <div className="flex gap-2 mt-1">
-              <button
-                onClick={handleGenerate}
-                disabled={generating}
-                className="btn-ghost text-xs flex-1 justify-center"
-              >
+              <button onClick={handleGenerate} disabled={generating} className="btn-ghost text-xs flex-1 justify-center">
                 🔄 Regenerate
               </button>
-              <button
-                onClick={() => handleSave('draft')}
-                disabled={saving}
-                className="btn-ghost text-xs flex-1 justify-center"
-              >
+              <button onClick={() => handleSave('draft')} disabled={saving} className="btn-ghost text-xs flex-1 justify-center">
                 <Save size={12} /> Save Draft
               </button>
-              <button
-                onClick={() => handleSave('approved')}
-                disabled={saving}
-                className="btn-orange text-xs flex-1 justify-center"
-              >
+              <button onClick={() => handleSave('approved')} disabled={saving} className="btn-orange text-xs flex-1 justify-center">
                 <ImageIcon size={12} />
                 {saving ? 'Saving...' : 'Save & Create Creative'}
               </button>
@@ -366,6 +440,17 @@ No markdown, no explanation, just the JSON.`
           </div>
         )}
       </div>
+
+      {/* Marketplace picker modal */}
+      {showMarketplacePicker && (
+        <MarketplacePicker
+          onSelect={listing => {
+            setMarketplaceListing(listing)
+            setShowMarketplacePicker(false)
+          }}
+          onClose={() => setShowMarketplacePicker(false)}
+        />
+      )}
     </div>
   )
 }
