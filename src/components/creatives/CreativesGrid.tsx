@@ -1,28 +1,31 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { Image, Video, Play, Plus, Clock } from 'lucide-react'
+import { Image, Video, Plus, Clock } from 'lucide-react'
 
-const sourceLabels: Record<string, string> = {
+const methodLabels: Record<string, string> = {
   canva: 'Canva',
-  fal_ai: 'Fal.ai',
+  fal: 'Fal.ai',
   creatomate: 'Creatomate',
   upload: 'Upload',
+  pexels: 'Pexels',
 }
 
-const statusColors: Record<string, string> = {
-  ready: 'bg-[#EAF3DE]',
-  pending: 'bg-[#FAEEDA]',
-  failed: 'bg-[#FCEBEB]',
+// Map new job_status values to display styles
+const statusStyles: Record<string, string> = {
+  completed:  'bg-[#EAF3DE]',
+  processing: 'bg-[#FAEEDA]',
+  pending:    'bg-[#FAEEDA]',
+  failed:     'bg-[#FCEBEB]',
 }
 
 interface Creative {
   id: string
-  type: string
-  source: string
+  creative_type: string
+  generation_method: string
   asset_url: string
   thumbnail_url: string | null
-  status: string
+  job_status: string
   duration_seconds: number | null
   created_at: string
 }
@@ -32,7 +35,7 @@ export default function CreativesGrid({ creatives }: { creatives: Creative[] }) 
   const [typeFilter, setTypeFilter] = useState('all')
 
   const filtered = creatives.filter(c =>
-    typeFilter === 'all' ? true : c.type === typeFilter
+    typeFilter === 'all' ? true : c.creative_type === typeFilter
   )
 
   return (
@@ -96,7 +99,7 @@ export default function CreativesGrid({ creatives }: { creatives: Creative[] }) 
                 <div key={c.id} className="bamo-card hover:border-[#1A2E5A] transition-colors cursor-pointer group">
                   {/* Thumb */}
                   <div className={`aspect-square flex items-center justify-center relative ${
-                    c.type === 'video' ? 'bg-[#FDE8D8]' : 'bg-[#E8EBF3]'
+                    c.creative_type === 'video' ? 'bg-[#FDE8D8]' : 'bg-[#E8EBF3]'
                   }`}>
                     {c.thumbnail_url || c.asset_url ? (
                       <img
@@ -106,28 +109,28 @@ export default function CreativesGrid({ creatives }: { creatives: Creative[] }) 
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                       />
                     ) : (
-                      c.type === 'video'
+                      c.creative_type === 'video'
                         ? <Video size={32} className="text-[#E8660A] opacity-40" />
                         : <Image size={32} className="text-[#1A2E5A] opacity-40" />
                     )}
 
                     {/* Type badge */}
                     <span className="absolute top-1.5 left-1.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-[#1A2E5A]/80 text-white">
-                      {c.type}
+                      {c.creative_type}
                     </span>
 
                     {/* Status dot */}
-                    <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${statusColors[c.status] ?? 'bg-gray-200'}`} />
+                    <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${statusStyles[c.job_status] ?? 'bg-gray-200'}`} />
 
                     {/* Video duration */}
-                    {c.type === 'video' && c.duration_seconds && (
+                    {c.creative_type === 'video' && c.duration_seconds && (
                       <span className="absolute bottom-1.5 left-1.5 text-[9px] font-bold bg-black/50 text-white px-1.5 py-0.5 rounded">
                         {Math.floor(c.duration_seconds / 60)}:{String(c.duration_seconds % 60).padStart(2, '0')}
                       </span>
                     )}
 
-                    {/* Pending overlay */}
-                    {c.status === 'pending' && (
+                    {/* Processing overlay */}
+                    {(c.job_status === 'pending' || c.job_status === 'processing') && (
                       <div className="absolute inset-0 bg-[#FAEEDA]/70 flex items-center justify-center">
                         <Clock size={20} className="text-[#854F0B]" />
                       </div>
@@ -136,7 +139,9 @@ export default function CreativesGrid({ creatives }: { creatives: Creative[] }) 
 
                   {/* Info */}
                   <div className="p-2.5">
-                    <div className="text-xs font-medium text-[#1A2E5A] truncate capitalize">{c.source.replace('_', '.')} · {c.type}</div>
+                    <div className="text-xs font-medium text-[#1A2E5A] truncate capitalize">
+                      {methodLabels[c.generation_method] ?? c.generation_method} · {c.creative_type}
+                    </div>
                     <div className="text-[10px] text-gray-400 mt-0.5">
                       {new Date(c.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                     </div>
@@ -144,9 +149,19 @@ export default function CreativesGrid({ creatives }: { creatives: Creative[] }) 
 
                   {/* Actions */}
                   <div className="flex border-t border-black/5">
-                    <button className="flex-1 py-1.5 text-[10px] font-medium text-gray-500 hover:bg-[#F4F5F7] transition-colors">Preview</button>
+                    <a
+                      href={c.asset_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 py-1.5 text-[10px] font-medium text-gray-500 hover:bg-[#F4F5F7] transition-colors text-center"
+                    >
+                      Preview
+                    </a>
                     <div className="w-px bg-black/5" />
-                    <Link href={`/campaigns/new?creative_id=${c.id}`} className="flex-1 py-1.5 text-[10px] font-medium text-[#E8660A] hover:bg-[#FDE8D8] transition-colors text-center">
+                    <Link
+                      href={`/campaigns/new?creative_id=${c.id}`}
+                      className="flex-1 py-1.5 text-[10px] font-medium text-[#E8660A] hover:bg-[#FDE8D8] transition-colors text-center"
+                    >
                       Use
                     </Link>
                   </div>
