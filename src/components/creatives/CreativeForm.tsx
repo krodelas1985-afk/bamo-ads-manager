@@ -1,49 +1,82 @@
 'use client'
-import { useRef, useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { Building, Sparkles, Image as ImageIcon, Video, Layout, Upload, Save } from 'lucide-react'
+import {
+  Building, Sparkles, Image as ImageIcon, Video,
+  Layout, Upload, Save, Plus, X, ExternalLink, Check
+} from 'lucide-react'
+import Link from 'next/link'
 
-const CREATOMATE_WEBHOOK   = 'https://n8n-bahaymo.onrender.com/webhook/bamo-video-generate'
-const CREATOMATE_TEMPLATE  = '7752bc3f-fde2-4592-b521-101c1bfd69cd'
-const POLL_INTERVAL_MS     = 3000
-const MAX_POLL_ATTEMPTS    = 40  // ~2 min
+const CREATOMATE_WEBHOOK  = 'https://n8n-bahaymo.onrender.com/webhook/bamo-video-generate'
+const CREATOMATE_TEMPLATE = '7752bc3f-fde2-4592-b521-101c1bfd69cd'
+const POLL_INTERVAL_MS    = 3000
+const MAX_POLL_ATTEMPTS   = 40
 
 const SOURCES = [
-  { id: 'canva',       label: 'Canva',      sub: 'Branded template',  icon: Layout,    ready: false },
-  { id: 'fal',         label: 'Fal.ai',     sub: 'AI-generated',      icon: Sparkles,  ready: false },
-  { id: 'creatomate',  label: 'Creatomate', sub: 'Video template',    icon: Video,     ready: true  },
-  { id: 'upload',      label: 'Upload',     sub: 'Your own asset',    icon: Upload,    ready: false },
+  { id: 'canva',      label: 'Canva',      sub: 'Branded template', icon: Layout,    ready: false },
+  { id: 'fal',        label: 'Fal.ai',     sub: 'AI-generated',     icon: Sparkles,  ready: false },
+  { id: 'creatomate', label: 'Creatomate', sub: 'Video template',   icon: Video,     ready: true  },
+  { id: 'upload',     label: 'Upload',     sub: 'Your own asset',   icon: Upload,    ready: false },
 ]
 
 const FORMATS = ['Square 1:1', 'Portrait 4:5', 'Story 9:16', 'Landscape 16:9']
 const TYPES   = ['image', 'video', 'carousel']
 
+const PHOTO_SLOTS = [
+  { key: 'photo1', label: 'Photo 1' },
+  { key: 'photo2', label: 'Photo 2' },
+  { key: 'photo3', label: 'Photo 3' },
+  { key: 'photo4', label: 'Photo 4' },
+  { key: 'photo5', label: 'Photo 5' },
+  { key: 'agentPhoto', label: 'Agent' },
+] as const
+
+type PhotoKey = typeof PHOTO_SLOTS[number]['key']
+
+interface Asset {
+  id: string
+  file_name: string
+  public_url: string
+  file_type: string
+  thumbnail_url: string | null
+}
+
 interface CreativeFormProps {
   clientId: string
-  listings:  any[]
-  contents:  any[]
-  assets:    any[]
+  listings: any[]
+  contents: any[]
+  assets: Asset[]
   defaultContentId?: string
 }
 
-interface CreativeResult {
-  url:   string
-  thumb?: string
-  id?:   string
-}
+interface CreativeResult { url: string; thumb?: string; id?: string }
+
+type DataSource = 'listing' | 'assets'
 
 export default function CreativeForm({ clientId, listings, contents, assets, defaultContentId }: CreativeFormProps) {
-  const router    = useRouter()
-  const supabase  = createClient()
+  const router   = useRouter()
+  const supabase = createClient()
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [creativeType,   setCreativeType]   = useState('image')
   const [source,         setSource]         = useState('canva')
   const [format,         setFormat]         = useState('Square 1:1')
+  const [dataSource,     setDataSource]     = useState<DataSource>('listing')
   const [listingId,      setListingId]      = useState(listings[0]?.id ?? '')
   const [contentId,      setContentId]      = useState(defaultContentId ?? '')
   const [prompt,         setPrompt]         = useState('')
+
+  // Asset picker state
+  const [selectedPhotos, setSelectedPhotos] = useState<Record<PhotoKey, string>>({
+    photo1: '', photo2: '', photo3: '', photo4: '', photo5: '', agentPhoto: '',
+  })
+  const [activePicker, setActivePicker] = useState<PhotoKey | null>(null)
+  const [manualInfo, setManualInfo] = useState({
+    address: '', details1: '', details2: '', agentName: '', agentEmail: '', agentPhone: '',
+  })
+
+  // Generation state
   const [generating,     setGenerating]     = useState(false)
   const [generatingStep, setGeneratingStep] = useState('')
   const [generated,      setGenerated]      = useState(false)
@@ -51,11 +84,23 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
   const [saving,         setSaving]         = useState(false)
   const [error,          setError]          = useState<string | null>(null)
 
-  const selectedListing = listings.find(l => l.id === listingId)
   const isCreatomateVideo = source === 'creatomate' && creativeType === 'video'
+  const selectedListing   = listings.find(l => l.id === listingId)
+  const imageAssets       = assets.filter(a => a.file_type === 'image')
 
-  // ── Polling helper ─────────────────────────────────────────────────────────
-  const pollJob = (renderJobId: string, attempts = 0) => {
+  function pickPhoto(key: PhotoKey, url: string) {
+    setSelectedPhotos((prev: Record<PhotoKey, string>) => ({ ...prev, [key]: url }))
+    setActivePicker(null)
+  }
+
+  function clearSlot(key: PhotoKey, e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation()
+    setSelectedPhotos((prev: Record<PhotoKey, string>) => ({ ...prev, [key]: '' }))
+    if (activePicker === key) setActivePicker(null)
+  }
+
+  // ── Polling ────────────────────────────────────────────────────────────────
+  function pollJob(renderJobId: string, attempts = 0) {
     if (attempts >= MAX_POLL_ATTEMPTS) {
       setGenerating(false)
       setError('Render timed out — check your Creatomate dashboard.')
@@ -95,20 +140,41 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
 
     try {
       if (isCreatomateVideo) {
-        // ── Real webhook path ────────────────────────────────────────────────
         setGeneratingStep('Sending to Creatomate...')
 
+        const payload: Record<string, any> = {
+          client_id:   clientId,
+          template_id: CREATOMATE_TEMPLATE,
+          prompt_id:   null,
+          brand_name:  'BaMo Realty',
+        }
+
+        if (dataSource === 'listing' && listingId) {
+          payload.data_source = 'listing'
+          payload.listing_id  = listingId
+        } else {
+          payload.data_source  = 'manual'
+          payload.manual_data  = {
+            photo1:     selectedPhotos.photo1,
+            photo2:     selectedPhotos.photo2,
+            photo3:     selectedPhotos.photo3,
+            photo4:     selectedPhotos.photo4,
+            photo5:     selectedPhotos.photo5,
+            agentPhoto: selectedPhotos.agentPhoto,
+            address:    manualInfo.address,
+            details1:   manualInfo.details1,
+            details2:   manualInfo.details2,
+            agentName:  manualInfo.agentName,
+            agentEmail: manualInfo.agentEmail,
+            agentPhone: manualInfo.agentPhone,
+            brandName:  'BaMo Realty',
+          }
+        }
+
         const res = await fetch(CREATOMATE_WEBHOOK, {
-          method:  'POST',
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            client_id:   clientId,
-            data_source: listingId ? 'listing' : 'manual',
-            listing_id:  listingId || undefined,
-            template_id: CREATOMATE_TEMPLATE,
-            prompt_id:   null,
-            brand_name:  'BaMo Realty',
-          }),
+          body: JSON.stringify(payload),
         })
 
         if (!res.ok) {
@@ -123,13 +189,8 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
         pollJob(data.creatomate_render_id)
 
       } else {
-        // ── Simulated path (Canva / Fal.ai / Upload — backend not yet built) ─
-        const steps = [
-          'Preparing template...',
-          'Applying listing data...',
-          'Generating creative...',
-          'Almost done...',
-        ]
+        // Simulated path for other sources
+        const steps = ['Preparing template...', 'Applying listing data...', 'Generating creative...', 'Almost done...']
         for (const step of steps) {
           setGeneratingStep(step)
           await new Promise(r => setTimeout(r, 700))
@@ -137,7 +198,6 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
         setGenerating(false)
         setGenerated(true)
       }
-
     } catch (err: any) {
       setGenerating(false)
       setError(err?.message ?? 'Something went wrong.')
@@ -150,23 +210,15 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
     setSaving(true)
     try {
       if (isCreatomateVideo && creativeResult?.id) {
-        // Row already created by the n8n completion webhook — nothing to insert.
         router.push('/creatives')
         router.refresh()
         return
       }
-
-      // For other sources (mocked), save a placeholder row.
-      const { error: dbErr } = await supabase.from('creatives').insert({
-        client_id:         clientId,
-        creative_type:     creativeType,
-        generation_method: source,
-        asset_url:         creativeResult?.url ?? '/placeholder-creative.jpg',
-        thumbnail_url:     creativeResult?.thumb ?? null,
-        job_status:        'completed',
+      await supabase.from('creatives').insert({
+        client_id: clientId, creative_type: creativeType, generation_method: source,
+        asset_url: creativeResult?.url ?? '/placeholder-creative.jpg',
+        thumbnail_url: creativeResult?.thumb ?? null, job_status: 'completed',
       })
-      if (dbErr) throw dbErr
-
       router.push('/creatives')
       router.refresh()
     } catch (err) {
@@ -176,7 +228,7 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
     }
   }
 
-  // ── JSX ────────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="grid grid-cols-5 gap-4 max-w-5xl">
 
@@ -188,31 +240,212 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
           </div>
           <div className="flex gap-1.5">
             {SOURCES.filter(s => s.ready).map(s => (
-              <span key={s.id} className="text-[10px] font-semibold bg-[#EAF3DE] text-[#3B6D11] px-2 py-0.5 rounded-full">
-                {s.label} ✓
-              </span>
+              <span key={s.id} className="text-[10px] font-semibold bg-[#EAF3DE] text-[#3B6D11] px-2 py-0.5 rounded-full">{s.label} ✓</span>
             ))}
             {SOURCES.filter(s => !s.ready).map(s => (
-              <span key={s.id} className="text-[10px] font-semibold bg-[#E8EBF3] text-[#1A2E5A] px-2 py-0.5 rounded-full">
-                {s.label}
-              </span>
+              <span key={s.id} className="text-[10px] font-semibold bg-[#E8EBF3] text-[#1A2E5A] px-2 py-0.5 rounded-full">{s.label}</span>
             ))}
           </div>
         </div>
 
         <div className="p-4 flex flex-col gap-4">
 
-          {/* Listing */}
-          {listings.length > 0 && (
+          {/* Creative type */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Creative type</label>
+            <div className="flex gap-2">
+              {TYPES.map(t => (
+                <button key={t} onClick={() => setCreativeType(t)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors flex items-center justify-center gap-1.5 ${
+                    creativeType === t ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                  }`}>
+                  {t === 'image' && <ImageIcon size={13} />}
+                  {t === 'video' && <Video size={13} />}
+                  {t === 'carousel' && <Layout size={13} />}
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Source */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Generation source</label>
+            <div className="grid grid-cols-2 gap-2">
+              {SOURCES.map(({ id, label, sub, icon: Icon, ready }) => (
+                <button key={id} onClick={() => setSource(id)}
+                  className={`p-3 rounded-lg border text-left transition-colors relative ${
+                    source === id ? 'border-[#E8660A] bg-[#FDE8D8]' : 'border-black/10 hover:bg-gray-50'
+                  }`}>
+                  <Icon size={18} className={source === id ? 'text-[#E8660A]' : 'text-[#1A2E5A]'} />
+                  <div className={`text-xs font-semibold mt-1.5 ${source === id ? 'text-[#E8660A]' : 'text-[#1A2E5A]'}`}>{label}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>
+                  {!ready && (
+                    <span className="absolute top-1.5 right-1.5 text-[9px] font-bold bg-[#E8EBF3] text-[#8a93ad] px-1.5 py-0.5 rounded-full">SOON</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Creatomate-specific: data source ── */}
+          {isCreatomateVideo && (
+            <div>
+              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Photo source</label>
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => setDataSource('listing')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                    dataSource === 'listing' ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                  }`}>
+                  <Building size={13} /> From Listing
+                </button>
+                <button onClick={() => setDataSource('assets')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                    dataSource === 'assets' ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                  }`}>
+                  <ImageIcon size={13} /> Pick from Library
+                </button>
+              </div>
+
+              {/* From Listing */}
+              {dataSource === 'listing' && listings.length > 0 && (
+                <div className="flex items-center gap-2 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
+                  <Building size={15} className="text-[#1A2E5A] flex-shrink-0" />
+                  <select className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
+                    value={listingId} onChange={e => setListingId(e.target.value)}>
+                    {listings.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.property_name ?? 'Unnamed'}{l.price ? ` — ₱${Number(l.price).toLocaleString()}` : ''}{l.city ? ` · ${l.city}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Pick from Library */}
+              {dataSource === 'assets' && (
+                <div className="flex flex-col gap-3">
+
+                  {/* Photo slots */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {PHOTO_SLOTS.map(({ key, label }) => {
+                      const url = selectedPhotos[key]
+                      const isActive = activePicker === key
+                      return (
+                        <div key={key}>
+                          <div className="text-[10px] font-medium text-gray-500 mb-1">{label}</div>
+                          <button
+                            onClick={() => setActivePicker(isActive ? null : key)}
+                            className={`w-full aspect-square rounded-lg border-2 flex items-center justify-center overflow-hidden relative transition-all ${
+                              isActive ? 'border-[#E8660A]' : url ? 'border-[#1A2E5A]' : 'border-dashed border-black/15 hover:border-[#E8660A] bg-[#F4F5F7]'
+                            }`}>
+                            {url ? (
+                              <>
+                                <img src={url} alt={label} className="w-full h-full object-cover" />
+                                <button onClick={e => clearSlot(key, e)}
+                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center hover:bg-red-500 transition-colors">
+                                  <X size={10} className="text-white" />
+                                </button>
+                                {isActive && (
+                                  <div className="absolute inset-0 bg-[#E8660A]/20 flex items-center justify-center">
+                                    <Check size={18} className="text-[#E8660A]" />
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <Plus size={20} className={isActive ? 'text-[#E8660A]' : 'text-gray-300'} />
+                            )}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Inline asset picker */}
+                  {activePicker !== null && (
+                    <div className="border border-black/10 rounded-xl bg-[#F8F9FC] p-3">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="text-xs font-semibold text-[#1A2E5A]">
+                          Pick for {PHOTO_SLOTS.find(s => s.key === activePicker)?.label}
+                        </div>
+                        <Link href="/assets" target="_blank"
+                          className="text-[10px] text-[#E8660A] font-medium flex items-center gap-1 hover:underline">
+                          Manage Library <ExternalLink size={10} />
+                        </Link>
+                      </div>
+
+                      {imageAssets.length === 0 ? (
+                        <div className="text-center py-6">
+                          <div className="text-2xl mb-1.5">📂</div>
+                          <div className="text-xs text-gray-500 mb-2">No images uploaded yet</div>
+                          <Link href="/assets" target="_blank" className="btn-orange text-xs py-1.5 px-3">
+                            <Upload size={11} /> Go to Asset Library
+                          </Link>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                          {imageAssets.map(asset => {
+                            const isChosen = selectedPhotos[activePicker] === asset.public_url
+                            return (
+                              <button key={asset.id} onClick={() => pickPhoto(activePicker, asset.public_url)}
+                                className={`aspect-square rounded-lg overflow-hidden border-2 transition-all relative ${
+                                  isChosen ? 'border-[#E8660A]' : 'border-transparent hover:border-[#1A2E5A]'
+                                }`}>
+                                <img
+                                  src={asset.thumbnail_url ?? asset.public_url}
+                                  alt={asset.file_name}
+                                  className="w-full h-full object-cover"
+                                />
+                                {isChosen && (
+                                  <div className="absolute inset-0 bg-[#E8660A]/20 flex items-center justify-center">
+                                    <Check size={16} className="text-[#E8660A]" />
+                                  </div>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Manual info fields */}
+                  <div className="border-t border-black/5 pt-3">
+                    <div className="text-xs font-medium text-[#1A2E5A] mb-2">Property & Agent Info</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { key: 'address',   label: 'Address',      placeholder: 'Lipa City, Batangas' },
+                        { key: 'details2',  label: 'Price',        placeholder: 'PHP 5,000,000' },
+                        { key: 'details1',  label: 'Details',      placeholder: '120 sqm · 3 Bed · 2 Bath' },
+                        { key: 'agentName', label: 'Agent Name',   placeholder: 'Your Name' },
+                        { key: 'agentEmail',label: 'Agent Email',  placeholder: 'you@email.com' },
+                        { key: 'agentPhone',label: 'Agent Phone',  placeholder: '0917 000 0000' },
+                      ].map(({ key, label, placeholder }) => (
+                        <label key={key} className="block">
+                          <div className="text-[10px] font-semibold text-gray-500 mb-1">{label}</div>
+                          <input
+                            className="bamo-input text-xs"
+                            placeholder={placeholder}
+                            value={manualInfo[key as keyof typeof manualInfo]}
+                            onChange={e => setManualInfo((prev: typeof manualInfo) => ({ ...prev, [key]: e.target.value }))}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Non-Creatomate: listing dropdown */}
+          {!isCreatomateVideo && listings.length > 0 && (
             <div>
               <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Listing</label>
               <div className="flex items-center gap-2 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
                 <Building size={15} className="text-[#1A2E5A] flex-shrink-0" />
-                <select
-                  className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
-                  value={listingId}
-                  onChange={e => setListingId(e.target.value)}
-                >
+                <select className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
+                  value={listingId} onChange={e => setListingId(e.target.value)}>
                   {listings.map(l => (
                     <option key={l.id} value={l.id}>
                       {l.property_name ?? 'Unnamed'}{l.price ? ` — ₱${Number(l.price).toLocaleString()}` : ''}{l.city ? ` · ${l.city}` : ''}
@@ -227,13 +460,9 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
           {contents.length > 0 && (
             <div>
               <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
-                Content <span className="text-gray-400 font-normal">optional — use generated copy</span>
+                Content <span className="text-gray-400 font-normal">optional</span>
               </label>
-              <select
-                className="bamo-input text-sm"
-                value={contentId}
-                onChange={e => setContentId(e.target.value)}
-              >
+              <select className="bamo-input text-sm" value={contentId} onChange={e => setContentId(e.target.value)}>
                 <option value="">No content selected</option>
                 {contents.map(c => (
                   <option key={c.id} value={c.id}>{c.title ?? c.hook ?? 'Untitled content'}</option>
@@ -242,98 +471,36 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
             </div>
           )}
 
-          {/* Creative type */}
-          <div>
-            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Creative type</label>
-            <div className="flex gap-2">
-              {TYPES.map(t => (
-                <button
-                  key={t}
-                  onClick={() => setCreativeType(t)}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors flex items-center justify-center gap-1.5 ${
-                    creativeType === t ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {t === 'image'    && <ImageIcon size={13} />}
-                  {t === 'video'    && <Video size={13} />}
-                  {t === 'carousel' && <Layout size={13} />}
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Source */}
-          <div>
-            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Generation source</label>
-            <div className="grid grid-cols-2 gap-2">
-              {SOURCES.map(({ id, label, sub, icon: Icon, ready }) => (
-                <button
-                  key={id}
-                  onClick={() => setSource(id)}
-                  className={`p-3 rounded-lg border text-left transition-colors relative ${
-                    source === id
-                      ? 'border-[#E8660A] bg-[#FDE8D8]'
-                      : 'border-black/10 hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon size={18} className={source === id ? 'text-[#E8660A]' : 'text-[#1A2E5A]'} />
-                  <div className={`text-xs font-semibold mt-1.5 ${source === id ? 'text-[#E8660A]' : 'text-[#1A2E5A]'}`}>
-                    {label}
-                  </div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>
-                  {!ready && (
-                    <span className="absolute top-1.5 right-1.5 text-[9px] font-bold bg-[#E8EBF3] text-[#8a93ad] px-1.5 py-0.5 rounded-full">
-                      SOON
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Format */}
           <div>
             <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Format</label>
             <div className="flex flex-wrap gap-1.5">
               {FORMATS.map(f => (
-                <button
-                  key={f}
-                  onClick={() => setFormat(f)}
+                <button key={f} onClick={() => setFormat(f)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                     format === f ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
+                  }`}>
                   {f}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Prompt / notes */}
+          {/* Notes */}
           <div>
             <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
               Extra notes <span className="text-gray-400 font-normal">optional</span>
             </label>
-            <input
-              className="bamo-input text-sm"
-              type="text"
-              placeholder="e.g. bright natural light, modern interior, warm colors"
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-            />
+            <input className="bamo-input text-sm" type="text"
+              placeholder="e.g. bright natural light, modern interior"
+              value={prompt} onChange={e => setPrompt(e.target.value)} />
           </div>
 
-          {/* Error */}
           {error && (
             <div className="bg-[#FCEBEB] text-[#A32D2D] text-xs rounded-lg px-3 py-2.5">{error}</div>
           )}
 
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="btn-orange w-full justify-center py-2.5"
-          >
+          <button onClick={handleGenerate} disabled={generating} className="btn-orange w-full justify-center py-2.5">
             <Sparkles size={14} />
             {generating ? generatingStep : 'Generate Creative'}
           </button>
@@ -344,7 +511,7 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
       <div className="bamo-card col-span-2 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-black/5">
           <div className="text-sm font-semibold text-[#1A2E5A]">Preview</div>
-          {generated && <span className="text-xs text-[#3B6D11]">✅ Ready</span>}
+          {generated  && <span className="text-xs text-[#3B6D11]">✅ Ready</span>}
           {generating && <span className="text-xs text-[#854F0B]">⏳ Processing</span>}
         </div>
 
@@ -361,16 +528,10 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
                 )}
               </div>
             ) : generated && creativeResult ? (
-              // ── Real Creatomate video preview ──
               isCreatomateVideo ? (
-                <video
-                  src={creativeResult.url}
-                  poster={creativeResult.thumb}
-                  controls
-                  className="w-full h-full object-contain bg-black"
-                />
+                <video src={creativeResult.url} poster={creativeResult.thumb} controls
+                  className="w-full h-full object-contain bg-black" />
               ) : (
-                // ── Mock preview for other sources ──
                 <div className="w-full h-full bg-[#E8EBF3] rounded-xl flex flex-col items-center justify-center gap-2 relative overflow-hidden">
                   <Building size={40} className="text-[#1A2E5A] opacity-30" />
                   {selectedListing && (
@@ -395,9 +556,7 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
           {generated && (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <button onClick={handleGenerate} className="btn-ghost text-xs flex-1 justify-center py-2">
-                  🔄 Redo
-                </button>
+                <button onClick={handleGenerate} className="btn-ghost text-xs flex-1 justify-center py-2">🔄 Redo</button>
                 <button onClick={handleSave} disabled={saving} className="btn-navy text-xs flex-1 justify-center py-2">
                   <Save size={12} /> {saving ? 'Saving...' : 'Save'}
                 </button>
@@ -409,7 +568,6 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
           )}
         </div>
       </div>
-
     </div>
   )
 }
