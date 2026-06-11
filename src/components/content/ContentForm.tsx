@@ -10,6 +10,7 @@ const TONES = ['professional', 'casual', 'urgent', 'aspirational']
 
 interface Listing {
   id: string
+  client_id?: string | null
   property_name: string | null
   price: number | null
   city: string | null
@@ -17,15 +18,22 @@ interface Listing {
 }
 
 interface ContentFormProps {
-  clientId: string
+  clientId: string | null
+  clients?: { id: string; name: string }[]
   listings: Listing[]
 }
 
 type ListingSource = 'local' | 'marketplace'
 
-export default function ContentForm({ clientId, listings }: ContentFormProps) {
+export default function ContentForm({ clientId, clients = [], listings }: ContentFormProps) {
   const router = useRouter()
   const supabase = createClient()
+
+  const [activeClientId, setActiveClientId] = useState<string | null>(clientId ?? clients[0]?.id ?? null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const visibleListings = clients.length > 0
+    ? listings.filter(l => l.client_id === activeClientId)
+    : listings
 
   const [platform, setPlatform] = useState('facebook')
   const [tone, setTone] = useState('professional')
@@ -90,14 +98,19 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
 
   async function handleSave(status: 'draft' | 'approved') {
     if (!generated && !editCaption) return
+    if (!activeClientId) {
+      setSaveError('Select a client before saving.')
+      return
+    }
     setSaving(true)
+    setSaveError(null)
     try {
       let resolvedListingId: string | null = selectedListing?.id ?? null
       if (listingSource === 'marketplace' && marketplaceListing) {
-        const { data: upserted } = await supabase
+        const { data: upserted, error: upsertError } = await supabase
           .from('ad_listings')
           .upsert({
-            client_id: clientId,
+            client_id: activeClientId,
             marketplace_listing_id: marketplaceListing.marketplace_id,
             property_name: marketplaceListing.property_name,
             property_type: marketplaceListing.property_type,
@@ -118,11 +131,12 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
           }, { onConflict: 'client_id,marketplace_listing_id' })
           .select('id')
           .single()
+        if (upsertError) throw upsertError
         resolvedListingId = upserted?.id ?? null
       }
 
       const { error } = await supabase.from('ad_content').insert({
-        client_id: clientId,
+        client_id: activeClientId,
         platform,
         tone,
         target_audience: audience || null,
@@ -139,6 +153,7 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
       router.refresh()
     } catch (err) {
       console.error(err)
+      setSaveError(err instanceof Error ? err.message : 'Save failed — please try again.')
     } finally {
       setSaving(false)
     }
@@ -159,6 +174,28 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
         </div>
 
         <div className="p-4 flex flex-col gap-4">
+
+          {/* Client selector — baymo_admin only */}
+          {clients.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Client</label>
+              <div className="flex items-center gap-3 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
+                <select
+                  className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
+                  value={activeClientId ?? ''}
+                  onChange={e => {
+                    setActiveClientId(e.target.value || null)
+                    setSelectedListing(null)
+                  }}
+                >
+                  <option value="">Select a client…</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Let BaMo Decide banner */}
           <div className="bg-[#1A2E5A] rounded-xl p-4 flex items-center justify-between">
@@ -216,18 +253,18 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
 
             {/* Local listings dropdown */}
             {listingSource === 'local' && (
-              listings.length > 0 ? (
+              visibleListings.length > 0 ? (
                 <div className="flex items-center gap-3 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
                   <Building size={16} className="text-[#1A2E5A] flex-shrink-0" />
                   <select
                     className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
                     value={selectedListing?.id ?? ''}
                     onChange={e => {
-                      const l = listings.find(l => l.id === e.target.value)
+                      const l = visibleListings.find(l => l.id === e.target.value)
                       setSelectedListing(l ?? null)
                     }}
                   >
-                    {listings.map(l => (
+                    {visibleListings.map(l => (
                       <option key={l.id} value={l.id}>
                         {l.property_name ?? 'Unnamed'} — {l.city} {l.price ? `· ₱${Number(l.price).toLocaleString()}` : ''}
                       </option>
@@ -425,6 +462,11 @@ export default function ContentForm({ clientId, listings }: ContentFormProps) {
               <span className="text-[#E8660A]">→</span>
             </div>
 
+            {saveError && (
+              <div className="text-[11px] text-[#A32D2D] bg-[#FCEBEB] rounded-lg px-3 py-2">
+                {saveError}
+              </div>
+            )}
             <div className="flex gap-2 mt-1">
               <button onClick={handleGenerate} disabled={generating} className="btn-ghost text-xs flex-1 justify-center">
                 🔄 Regenerate

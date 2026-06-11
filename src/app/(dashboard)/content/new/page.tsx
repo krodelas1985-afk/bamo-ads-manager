@@ -22,9 +22,13 @@ export default async function NewContentPage() {
 
   const { data: listings } = await supabase
     .from('ad_listings')
-    .select('id, property_name, price, city, property_type')
+    .select('id, client_id, property_name, price, city, property_type')
     .match(clientFilter)
     .limit(20)
+
+  const { data: clients } = profile.role === 'baymo_admin'
+    ? await supabase.from('clients').select('id, name').order('name')
+    : { data: null }
 
   const initials = (profile.full_name ?? 'KR').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
@@ -43,7 +47,8 @@ export default async function NewContentPage() {
       />
       <div className="flex-1 overflow-y-auto p-6">
         <ContentForm
-          clientId={profile.client_id ?? profile.id}
+          clientId={profile.client_id ?? null}
+          clients={clients ?? []}
           listings={listings ?? []}
         />
       </div>
