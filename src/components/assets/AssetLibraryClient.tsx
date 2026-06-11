@@ -16,6 +16,7 @@ const FOLDERS = [
   { id: 'branding', label: 'Branding', icon: '👑' },
   { id: 'hero', label: 'Hero Images', icon: '🖼️' },
   { id: 'video', label: 'Videos', icon: '🎬' },
+  { id: 'generated', label: 'Generated', icon: '✨' },
 ]
 
 const TYPE_ICONS: Record<string, any> = {
@@ -49,11 +50,12 @@ interface Asset {
   used_in_posts: boolean
   usage_count: number
   created_at: string
+  source?: 'upload' | 'creative'
 }
 
 interface Props {
   assets: Asset[]
-  clientId: string
+  clientId: string | null
   storageUsedGB: number
   storageMaxGB: number
 }
@@ -93,6 +95,10 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
+    if (!clientId) {
+      alert('Select a client first (Viewing dropdown above) to upload assets.')
+      return
+    }
     const file = files[0]
     setUploading(true)
     setUploadFileName(file.name)
@@ -143,7 +149,7 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
       if (dbErr) throw dbErr
 
       setUploadProgress(100)
-      setAssets(prev => [inserted, ...prev])
+      setAssets(prev => [{ ...inserted, source: 'upload' }, ...prev])
 
       setTimeout(() => {
         setUploading(false)
@@ -159,6 +165,10 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
   }
 
   async function handleDelete(asset: Asset) {
+    if (asset.source === 'creative') {
+      alert('Generated creatives are managed in the Creatives tab.')
+      return
+    }
     if (!confirm(`Delete "${asset.file_name}"? This cannot be undone.`)) return
     setDeleting(true)
     try {
@@ -174,12 +184,18 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
   }
 
   async function handleBulkDelete() {
-    if (!confirm(`Delete ${selectedIds.size} assets? This cannot be undone.`)) return
-    const toDelete = assets.filter(a => selectedIds.has(a.id))
-    const paths = toDelete.map(a => a.storage_path)
-    await supabase.storage.from('client-assets').remove(paths)
-    await supabase.from('client_assets').delete().in('id', Array.from(selectedIds))
-    setAssets(prev => prev.filter(a => !selectedIds.has(a.id)))
+    const toDelete = assets.filter(a => selectedIds.has(a.id) && a.source !== 'creative')
+    const skipped = selectedIds.size - toDelete.length
+    if (toDelete.length === 0) {
+      alert('Generated creatives are managed in the Creatives tab and were not deleted.')
+      return
+    }
+    if (!confirm(`Delete ${toDelete.length} asset(s)?${skipped > 0 ? ` (${skipped} generated creative(s) will be skipped.)` : ''} This cannot be undone.`)) return
+    const paths = toDelete.map(a => a.storage_path).filter(Boolean)
+    if (paths.length > 0) await supabase.storage.from('client-assets').remove(paths)
+    await supabase.from('client_assets').delete().in('id', toDelete.map(a => a.id))
+    const deletedIds = new Set(toDelete.map(a => a.id))
+    setAssets(prev => prev.filter(a => !deletedIds.has(a.id)))
     setSelectedIds(new Set())
     setSelectMode(false)
   }
@@ -318,7 +334,9 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
           ) : (
             <div className="flex flex-col items-center gap-1.5">
               <Upload size={24} className="text-[#E8660A]" />
-              <div className="text-sm font-medium text-[#1A2E5A]">Drag & drop files here</div>
+              <div className="text-sm font-medium text-[#1A2E5A]">
+                {clientId ? 'Drag & drop files here' : 'Select a client above to upload'}
+              </div>
               <div className="text-xs text-gray-400">JPG, PNG, MP4, MOV, PDF · Max 50MB per file</div>
             </div>
           )}
@@ -375,13 +393,15 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
               <a href={selected.public_url} download={selected.file_name} className="btn-ghost text-xs py-1.5">
                 <Download size={11} /> Download
               </a>
-              <button
-                onClick={() => handleDelete(selected)}
-                disabled={deleting}
-                className="text-xs py-1.5 px-2.5 rounded-lg border border-[#F09595] text-[#A32D2D] hover:bg-[#FCEBEB] transition-colors flex items-center gap-1 disabled:opacity-50"
-              >
-                <Trash2 size={11} /> Delete
-              </button>
+              {selected.source !== 'creative' && (
+                <button
+                  onClick={() => handleDelete(selected)}
+                  disabled={deleting}
+                  className="text-xs py-1.5 px-2.5 rounded-lg border border-[#F09595] text-[#A32D2D] hover:bg-[#FCEBEB] transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  <Trash2 size={11} /> Delete
+                </button>
+              )}
             </div>
           </div>
         )}

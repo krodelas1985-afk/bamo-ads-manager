@@ -1,23 +1,24 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 type ClientOption = { id: string; name: string }
 
 /**
- * baymo_admin only: filter Analytics to one client or view all.
+ * baymo_admin only: filter the current page to one client or view all.
  * Sets ?client_id= on the URL; the server component re-fetches scoped data.
  */
 export default function ClientSelector({ clients }: { clients: ClientOption[] }) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const selected = searchParams.get('client_id') ?? ''
 
   const onChange = (value: string) => {
     if (value) {
-      router.push(`/analytics?client_id=${value}`)
+      router.push(`${pathname}?client_id=${value}`)
     } else {
-      router.push('/analytics')
+      router.push(pathname)
     }
   }
 
