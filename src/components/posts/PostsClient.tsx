@@ -1,33 +1,46 @@
 'use client'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
 import {
-  Facebook, Instagram, Linkedin, Send, Calendar,
-  BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, Plus, X
+  Facebook, Instagram, Send, Calendar,
+  BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, AlertTriangle, RotateCcw, X
 } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-[#E8EBF3] text-[#1A2E5A]',
+  publishing: 'bg-[#FDE8D8] text-[#E8660A]',
   published: 'bg-[#EAF3DE] text-[#3B6D11]',
   draft: 'bg-[#F1EFE8] text-[#5F5E5A]',
   failed: 'bg-[#FCEBEB] text-[#A32D2D]',
+  cancelled: 'bg-[#F1EFE8] text-[#5F5E5A]',
 }
 
 const PLATFORM_CONFIG: Record<string, { icon: any; bg: string; color: string }> = {
   facebook: { icon: Facebook, bg: 'bg-[#E8EBF3]', color: 'text-[#1A2E5A]' },
   instagram: { icon: Instagram, bg: 'bg-[#FDE8D8]', color: 'text-[#E8660A]' },
-  linkedin: { icon: Linkedin, bg: 'bg-[#E6F1FB]', color: 'text-[#185FA5]' },
 }
 
-const POST_TYPES = ['feed', 'reel', 'story', 'carousel']
-const PLATFORMS = ['facebook', 'instagram', 'linkedin']
+const POST_TYPES = [
+  { id: 'feed', enabled: true },
+  { id: 'carousel', enabled: true },
+  { id: 'reel', enabled: false },
+  { id: 'story', enabled: false },
+]
+const PLATFORMS = ['facebook', 'instagram']
 
 interface Post {
   id: string
+  client_id: string | null
+  social_account_id: string | null
+  creative_id: string | null
+  content_id: string | null
   platform: string
   post_type: string | null
   status: string
+  message: string | null
+  link_url: string | null
+  media_urls: string[] | null
+  error_message: string | null
   scheduled_at: string | null
   published_at: string | null
   meta_post_id: string | null
@@ -36,21 +49,44 @@ interface Post {
 
 interface SocialAccount {
   id: string
+  client_id: string | null
   platform: string
-  account_name: string
+  account_id: string
+  account_name: string | null
+}
+
+interface Creative {
+  id: string
+  client_id: string
+  creative_type: string
+  asset_url: string
+  thumbnail_url: string | null
+}
+
+interface Content {
+  id: string
+  client_id: string
+  title: string | null
+  caption: string | null
+  hook: string | null
+  hashtags: string[] | null
 }
 
 interface Props {
+  role: string
   posts: Post[]
   socialAccounts: SocialAccount[]
-  creatives: any[]
-  contents: any[]
-  clientId: string
+  creatives: Creative[]
+  contents: Content[]
+  clients: { id: string; name: string }[]
+  defaultClientId: string | null
 }
 
-export default function PostsClient({ posts: initialPosts, socialAccounts, creatives, contents, clientId }: Props) {
+export default function PostsClient({
+  role, posts: initialPosts, socialAccounts, creatives, contents, clients, defaultClientId,
+}: Props) {
   const router = useRouter()
-  const supabase = createClient()
+  const isAdmin = role === 'baymo_admin'
 
   const [posts, setPosts] = useState<Post[]>(initialPosts)
   const [view, setView] = useState<'list' | 'calendar'>('list')
@@ -58,21 +94,46 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Compose form state
-  const [platforms, setPlatforms] = useState<string[]>(['facebook', 'instagram'])
+  const [selectedClientId, setSelectedClientId] = useState<string>(
+    defaultClientId ?? clients[0]?.id ?? ''
+  )
+  const [platforms, setPlatforms] = useState<string[]>(['facebook'])
   const [postType, setPostType] = useState('feed')
   const [caption, setCaption] = useState('')
   const [hashtags, setHashtags] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
   const [creativeId, setCreativeId] = useState('')
   const [contentId, setContentId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('09:00')
-  const [socialAccountId, setSocialAccountId] = useState(socialAccounts[0]?.id ?? '')
+  const [editingId, setEditingId] = useState<string | null>(null)
 
-  const filtered = posts.filter(p => {
+  // Per-client filtered options
+  const clientAccounts = useMemo(
+    () => socialAccounts.filter(a => !isAdmin || a.client_id === selectedClientId),
+    [socialAccounts, selectedClientId, isAdmin]
+  )
+  const fbAccount = clientAccounts.find(a => a.platform === 'facebook')
+  const clientCreatives = useMemo(
+    () => creatives.filter(c => !isAdmin || c.client_id === selectedClientId),
+    [creatives, selectedClientId, isAdmin]
+  )
+  const clientContents = useMemo(
+    () => contents.filter(c => !isAdmin || c.client_id === selectedClientId),
+    [contents, selectedClientId, isAdmin]
+  )
+  const visiblePosts = useMemo(
+    () => posts.filter(p => !isAdmin || !selectedClientId || p.client_id === selectedClientId),
+    [posts, selectedClientId, isAdmin]
+  )
+
+  const filtered = visiblePosts.filter(p => {
     const matchFilter = filter === 'all' ? true : p.status === filter
-    const matchSearch = search ? p.platform.toLowerCase().includes(search.toLowerCase()) : true
+    const text = `${p.platform} ${p.message ?? ''}`.toLowerCase()
+    const matchSearch = search ? text.includes(search.toLowerCase()) : true
     return matchFilter && matchSearch
   })
 
@@ -81,7 +142,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
   }
 
   function autoFillFromContent(id: string) {
-    const c = contents.find(c => c.id === id)
+    const c = clientContents.find(c => c.id === id)
     if (c) {
       setCaption(c.caption ?? c.hook ?? '')
       setHashtags(c.hashtags?.join(' ') ?? '')
@@ -89,52 +150,146 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
     setContentId(id)
   }
 
-  async function handlePost(schedule: boolean) {
-    if (!caption.trim()) { alert('Please add a caption'); return }
-    if (platforms.length === 0) { alert('Select at least one platform'); return }
+  function resetForm() {
+    setCaption(''); setHashtags(''); setLinkUrl('')
+    setScheduledDate(''); setCreativeId(''); setContentId('')
+    setEditingId(null)
+  }
+
+  function loadIntoForm(p: Post) {
+    setEditingId(p.id)
+    setPlatforms([p.platform])
+    setPostType(p.post_type ?? 'feed')
+    setCaption(p.message ?? '')
+    setLinkUrl(p.link_url ?? '')
+    setCreativeId(p.creative_id ?? '')
+    setContentId(p.content_id ?? '')
+    if (p.scheduled_at) {
+      const d = new Date(p.scheduled_at)
+      setScheduledDate(d.toISOString().slice(0, 10))
+      setScheduledTime(d.toTimeString().slice(0, 5))
+    } else {
+      setScheduledDate('')
+    }
+    if (isAdmin && p.client_id) setSelectedClientId(p.client_id)
+  }
+
+  const fullMessage = () =>
+    hashtags.trim() ? `${caption.trim()}\n\n${hashtags.trim()}` : caption.trim()
+
+  async function handleSubmit(action: 'draft' | 'schedule' | 'publish') {
+    if (!caption.trim() && !creativeId) { setNotice('Add a caption or pick a creative first'); return }
+    if (platforms.length === 0) { setNotice('Select at least one platform'); return }
+    if (isAdmin && !selectedClientId) { setNotice('Select a client first'); return }
+    if (action === 'schedule' && !scheduledDate) { setNotice('Pick a date to schedule'); return }
 
     setSaving(true)
+    setNotice(null)
     try {
-      const scheduledAt = schedule && scheduledDate
+      const scheduledAt = action === 'schedule'
         ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
         : null
 
-      const insertions = platforms.map(platform => ({
-        client_id: clientId,
-        social_account_id: socialAccountId || null,
-        creative_id: creativeId || null,
-        platform,
-        post_type: postType,
-        status: schedule && scheduledAt ? 'scheduled' : schedule ? 'draft' : 'published',
-        scheduled_at: scheduledAt,
-        published_at: !schedule ? new Date().toISOString() : null,
-      }))
+      if (editingId) {
+        // Update the existing post
+        const res = await fetch(`/api/posts/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: fullMessage(),
+            link_url: linkUrl || null,
+            creative_id: creativeId || null,
+            content_id: contentId || null,
+            post_type: postType,
+            scheduled_at: scheduledAt,
+            status: action === 'schedule' ? 'scheduled' : 'draft',
+          }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? 'Update failed')
+        let updated: Post = json.post
+        if (action === 'publish') {
+          const pubRes = await fetch(`/api/posts/${editingId}/publish`, { method: 'POST' })
+          const pub = await pubRes.json()
+          if (!pub.ok) setNotice(`Publish failed: ${pub.error}`)
+          const fresh = await fetch(`/api/posts?status=`).then(r => r.json()).catch(() => null)
+          if (fresh?.posts) { setPosts(fresh.posts); resetForm(); return }
+        }
+        setPosts(prev => prev.map(p => (p.id === updated.id ? updated : p)))
+        resetForm()
+        return
+      }
 
-      const { data, error } = await supabase.from('ad_posts').insert(insertions).select()
-      if (error) throw error
+      const res = await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: isAdmin ? selectedClientId : undefined,
+          social_account_id: fbAccount?.id ?? null,
+          platforms,
+          post_type: postType,
+          message: fullMessage(),
+          link_url: linkUrl || null,
+          creative_id: creativeId || null,
+          content_id: contentId || null,
+          action,
+          scheduled_at: scheduledAt,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Save failed')
 
-      setPosts(prev => [...(data ?? []), ...prev])
-
-      // Reset form
-      setCaption('')
-      setHashtags('')
-      setScheduledDate('')
-      setCreativeId('')
-      setContentId('')
+      setPosts(prev => [...(json.posts ?? []), ...prev])
+      if (json.instagram_note) setNotice(json.instagram_note)
+      const failedPublish = (json.publish_results ?? []).find((r: any) => !r.ok)
+      if (failedPublish) setNotice(`Publish failed: ${failedPublish.error}`)
+      resetForm()
     } catch (err) {
-      console.error(err)
-      alert('Failed to save post. Please try again.')
+      setNotice(err instanceof Error ? err.message : 'Failed to save post')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function publishNow(id: string) {
+    setActionLoading(id)
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/posts/${id}/publish`, { method: 'POST' })
+      const json = await res.json()
+      if (!json.ok) setNotice(`Publish failed: ${json.error}`)
+      const fresh = await fetch('/api/posts').then(r => r.json())
+      if (fresh.posts) setPosts(fresh.posts)
+    } catch {
+      setNotice('Publish request failed')
+    } finally {
+      setActionLoading(null)
     }
   }
 
   async function deletePost(id: string) {
     if (!confirm('Delete this post?')) return
     setActionLoading(id)
-    await supabase.from('ad_posts').delete().eq('id', id)
-    setPosts(prev => prev.filter(p => p.id !== id))
-    setActionLoading(null)
+    try {
+      const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) { setNotice(json.error ?? 'Delete failed'); return }
+      setPosts(prev => prev.filter(p => p.id !== id))
+      if (editingId === id) resetForm()
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  function duplicatePost(p: Post) {
+    setEditingId(null)
+    setPlatforms([p.platform])
+    setPostType(p.post_type ?? 'feed')
+    setCaption(p.message ?? '')
+    setLinkUrl(p.link_url ?? '')
+    setCreativeId(p.creative_id ?? '')
+    setScheduledDate('')
+    setNotice('Copied into composer — adjust and post')
   }
 
   // Calendar helpers
@@ -145,7 +300,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
     return d
   })
 
-  const postsByDate = posts.reduce((acc, p) => {
+  const postsByDate = visiblePosts.reduce((acc, p) => {
     const d = (p.scheduled_at ?? p.published_at)?.slice(0, 10)
     if (d) { acc[d] = acc[d] ?? []; acc[d].push(p) }
     return acc
@@ -158,12 +313,39 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
       <div className="w-72 min-w-72 bg-white border-r border-black/10 flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-black/8 flex items-center justify-between flex-shrink-0">
           <div className="text-sm font-semibold text-[#1A2E5A] flex items-center gap-1.5">
-            ✏️ New Post
+            ✏️ {editingId ? 'Edit Post' : 'New Post'}
           </div>
-          <div className="text-[10px] text-gray-400">Organic</div>
+          {editingId ? (
+            <button onClick={resetForm} className="text-[10px] text-gray-400 hover:text-[#A32D2D] flex items-center gap-0.5">
+              <X size={10} /> Cancel
+            </button>
+          ) : (
+            <div className="text-[10px] text-gray-400">Organic</div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+
+          {/* Admin: client selector */}
+          {isAdmin && (
+            <div>
+              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Client</label>
+              <select
+                className="bamo-input text-xs"
+                value={selectedClientId}
+                onChange={e => setSelectedClientId(e.target.value)}
+              >
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              {!fbAccount && (
+                <div className="text-[10px] text-[#A32D2D] mt-1">
+                  No Facebook page connected for this client
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Platform */}
           <div>
@@ -187,6 +369,11 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
                 )
               })}
             </div>
+            {platforms.includes('instagram') && (
+              <div className="text-[10px] text-gray-400 mt-1">
+                Instagram saves as draft — publishing arrives in v1.1
+              </div>
+            )}
           </div>
 
           {/* Post type */}
@@ -195,20 +382,26 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
             <div className="flex flex-wrap gap-1.5">
               {POST_TYPES.map(t => (
                 <button
-                  key={t}
-                  onClick={() => setPostType(t)}
+                  key={t.id}
+                  onClick={() => t.enabled && setPostType(t.id)}
+                  disabled={!t.enabled}
+                  title={t.enabled ? undefined : 'Coming in v1.1'}
                   className={`px-2.5 py-1 rounded-full text-[11px] font-medium capitalize transition-colors ${
-                    postType === t ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                    postType === t.id
+                      ? 'bg-[#1A2E5A] text-white'
+                      : t.enabled
+                        ? 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                        : 'border border-black/5 text-gray-300 cursor-not-allowed'
                   }`}
                 >
-                  {t}
+                  {t.id}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Content pull */}
-          {contents.length > 0 && (
+          {clientContents.length > 0 && (
             <div>
               <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
                 Pull from Content <span className="text-gray-400 font-normal">optional</span>
@@ -219,7 +412,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
                 onChange={e => autoFillFromContent(e.target.value)}
               >
                 <option value="">Select content...</option>
-                {contents.map(c => (
+                {clientContents.map(c => (
                   <option key={c.id} value={c.id}>{c.title ?? c.hook ?? 'Untitled'}</option>
                 ))}
               </select>
@@ -239,7 +432,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
           </div>
 
           {/* Creative */}
-          {creatives.length > 0 && (
+          {clientCreatives.length > 0 && (
             <div>
               <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
                 Creative <span className="text-gray-400 font-normal">optional</span>
@@ -250,12 +443,34 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
                 onChange={e => setCreativeId(e.target.value)}
               >
                 <option value="">No creative selected</option>
-                {creatives.map(c => (
-                  <option key={c.id} value={c.id}>{c.source.replace('_', '.')} · {c.type}</option>
+                {clientCreatives.map(c => (
+                  <option key={c.id} value={c.id}>{c.creative_type} · {c.id.slice(0, 8)}</option>
                 ))}
               </select>
+              {creativeId && (
+                <img
+                  src={clientCreatives.find(c => c.id === creativeId)?.thumbnail_url
+                    ?? clientCreatives.find(c => c.id === creativeId)?.asset_url}
+                  alt="creative preview"
+                  className="mt-1.5 rounded-lg border border-black/10 max-h-24 object-cover w-full"
+                />
+              )}
             </div>
           )}
+
+          {/* Link */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
+              Link <span className="text-gray-400 font-normal">optional</span>
+            </label>
+            <input
+              className="bamo-input text-xs"
+              type="url"
+              placeholder="https://bahaymo.com/listing/..."
+              value={linkUrl}
+              onChange={e => setLinkUrl(e.target.value)}
+            />
+          </div>
 
           {/* Schedule */}
           <div>
@@ -282,27 +497,34 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
             />
           </div>
 
+          {notice && (
+            <div className="text-[11px] text-[#A32D2D] bg-[#FCEBEB] rounded-lg px-2.5 py-2 flex items-start gap-1.5">
+              <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+              {notice}
+            </div>
+          )}
+
         </div>
 
         {/* Footer */}
         <div className="p-3 border-t border-black/8 flex flex-col gap-1.5 flex-shrink-0">
           <button
-            onClick={() => handlePost(false)}
-            disabled={saving}
-            className="btn-navy w-full justify-center py-2 text-xs"
+            onClick={() => handleSubmit('publish')}
+            disabled={saving || (platforms.length === 1 && platforms[0] === 'instagram')}
+            className="btn-navy w-full justify-center py-2 text-xs disabled:opacity-40"
           >
-            <Send size={12} /> {saving ? 'Posting...' : 'Post Now'}
+            <Send size={12} /> {saving ? 'Working...' : editingId ? 'Save & Publish' : 'Post Now'}
           </button>
           <div className="flex gap-1.5">
             <button
-              onClick={() => handlePost(true)}
+              onClick={() => handleSubmit('draft')}
               disabled={saving}
               className="btn-ghost flex-1 justify-center text-xs py-2"
             >
-              Save Draft
+              {editingId ? 'Save Draft' : 'Save Draft'}
             </button>
             <button
-              onClick={() => handlePost(true)}
+              onClick={() => handleSubmit('schedule')}
               disabled={saving || !scheduledDate}
               className="btn-orange flex-1 justify-center text-xs py-2 disabled:opacity-40"
             >
@@ -319,7 +541,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xl font-semibold text-[#1A2E5A]">Posts</div>
-            <div className="text-xs text-gray-500 mt-0.5">Schedule and publish across FB, IG, and LinkedIn.</div>
+            <div className="text-xs text-gray-500 mt-0.5">Schedule and publish to Facebook — Instagram coming in v1.1.</div>
           </div>
           <div className="flex gap-1 bg-white rounded-lg border border-black/10 p-1">
             <button
@@ -340,7 +562,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
         {/* Social accounts bar */}
         <div className="bamo-card px-4 py-3 flex items-center gap-3 flex-wrap">
           <div className="text-xs font-semibold text-[#1A2E5A]">Connected:</div>
-          {socialAccounts.length > 0 ? socialAccounts.map(a => {
+          {clientAccounts.length > 0 ? clientAccounts.map(a => {
             const conf = PLATFORM_CONFIG[a.platform]
             const Icon = conf?.icon ?? Facebook
             return (
@@ -357,7 +579,7 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
               </div>
             )
           }) : (
-            <div className="text-xs text-gray-400">No accounts connected — go to Settings → Social Accounts</div>
+            <div className="text-xs text-gray-400">No accounts connected — run the Meta connect flow in Settings</div>
           )}
         </div>
 
@@ -419,14 +641,23 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
                               <span className="text-[10px] text-gray-400 capitalize">{p.post_type}</span>
                             )}
                           </div>
+                          {p.message && (
+                            <div className="text-xs text-[#1A2E5A] truncate mb-0.5">{p.message}</div>
+                          )}
                           <div className="text-xs text-gray-600">
-                            {p.scheduled_at
+                            {p.scheduled_at && p.status === 'scheduled'
                               ? `Scheduled: ${new Date(p.scheduled_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
                               : p.published_at
-                                ? `Published: ${new Date(p.published_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
-                                : 'Draft'
+                                ? `Published: ${new Date(p.published_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                                : p.status.charAt(0).toUpperCase() + p.status.slice(1)
                             }
                           </div>
+                          {p.status === 'failed' && p.error_message && (
+                            <div className="text-[10px] text-[#A32D2D] mt-1 flex items-start gap-1">
+                              <AlertTriangle size={10} className="mt-0.5 flex-shrink-0" />
+                              {p.error_message}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-500'}`}>
@@ -443,34 +674,66 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
                       <div className="flex border-t border-black/5">
                         {p.status === 'published' ? (
                           <>
-                            <button className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1">
+                            <button className="flex-1 py-2 text-[11px] font-medium text-gray-400 cursor-default flex items-center justify-center gap-1" title="Stats arrive with the Analytics wiring">
                               <BarChart2 size={11} /> Stats
                             </button>
                             <div className="w-px bg-black/5" />
-                            <button className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => duplicatePost(p)}
+                              className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1"
+                            >
                               <Copy size={11} /> Duplicate
+                            </button>
+                          </>
+                        ) : p.status === 'failed' ? (
+                          <>
+                            <button
+                              onClick={() => publishNow(p.id)}
+                              disabled={isLoading || p.platform === 'instagram'}
+                              className="flex-1 py-2 text-[11px] font-semibold text-[#E8660A] hover:bg-[#FDE8D8] flex items-center justify-center gap-1 disabled:opacity-40"
+                            >
+                              <RotateCcw size={11} /> {isLoading ? 'Retrying...' : 'Retry'}
+                            </button>
+                            <div className="w-px bg-black/5" />
+                            <button
+                              onClick={() => loadIntoForm(p)}
+                              className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1"
+                            >
+                              <Edit size={11} /> Edit
                             </button>
                           </>
                         ) : (
                           <>
-                            <button className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => loadIntoForm(p)}
+                              className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1"
+                            >
                               <Edit size={11} /> Edit
                             </button>
                             <div className="w-px bg-black/5" />
-                            <button className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => loadIntoForm(p)}
+                              className="flex-1 py-2 text-[11px] font-medium text-gray-500 hover:bg-[#F4F5F7] flex items-center justify-center gap-1"
+                            >
                               <Clock size={11} /> Reschedule
                             </button>
                             <div className="w-px bg-black/5" />
-                            <button className="flex-1 py-2 text-[11px] font-semibold text-[#E8660A] hover:bg-[#FDE8D8] flex items-center justify-center gap-1">
-                              <Send size={11} /> Post Now
+                            <button
+                              onClick={() => publishNow(p.id)}
+                              disabled={isLoading || p.platform === 'instagram'}
+                              title={p.platform === 'instagram' ? 'IG publishing arrives in v1.1' : undefined}
+                              className="flex-1 py-2 text-[11px] font-semibold text-[#E8660A] hover:bg-[#FDE8D8] flex items-center justify-center gap-1 disabled:opacity-40"
+                            >
+                              <Send size={11} /> {isLoading ? 'Posting...' : 'Post Now'}
                             </button>
                           </>
                         )}
                         <div className="w-px bg-black/5" />
                         <button
                           onClick={() => deletePost(p.id)}
-                          disabled={isLoading}
-                          className="flex-1 py-2 text-[11px] font-medium text-[#A32D2D] hover:bg-[#FCEBEB] flex items-center justify-center gap-1 disabled:opacity-50"
+                          disabled={isLoading || p.status === 'published'}
+                          title={p.status === 'published' ? 'Published posts are kept as history' : undefined}
+                          className="flex-1 py-2 text-[11px] font-medium text-[#A32D2D] hover:bg-[#FCEBEB] flex items-center justify-center gap-1 disabled:opacity-40"
                         >
                           <Trash2 size={11} /> Delete
                         </button>
@@ -490,10 +753,6 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
               <div className="flex items-center justify-between mb-4">
                 <div className="text-sm font-semibold text-[#1A2E5A]">
                   {today.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })}
-                </div>
-                <div className="flex gap-1.5">
-                  <button className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#1A2E5A] hover:bg-gray-50">←</button>
-                  <button className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center text-[#1A2E5A] hover:bg-gray-50">→</button>
                 </div>
               </div>
 
@@ -526,7 +785,9 @@ export default function PostsClient({ posts: initialPosts, socialAccounts, creat
                         <div
                           key={p.id}
                           className={`text-[9px] font-semibold rounded px-1 py-0.5 mb-0.5 truncate ${
-                            p.status === 'published' ? 'bg-[#EAF3DE] text-[#3B6D11]' : 'bg-[#E8EBF3] text-[#1A2E5A]'
+                            p.status === 'published' ? 'bg-[#EAF3DE] text-[#3B6D11]' :
+                            p.status === 'failed' ? 'bg-[#FCEBEB] text-[#A32D2D]' :
+                            'bg-[#E8EBF3] text-[#1A2E5A]'
                           }`}
                         >
                           {p.platform} · {p.post_type}
