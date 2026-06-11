@@ -363,7 +363,7 @@ export default function PostsClient({
     <div className="flex flex-1 overflow-hidden">
 
       {/* Compose panel */}
-      <div className="w-[400px] min-w-[360px] bg-white border-r border-black/10 flex flex-col overflow-hidden">
+      <div className="w-1/2 min-w-[360px] max-w-[640px] bg-white border-r border-black/10 flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-black/8 flex items-center justify-between flex-shrink-0">
           <div className="text-sm font-semibold text-[#1A2E5A] flex items-center gap-1.5">
             ✏️ {editingId ? 'Edit Post' : 'New Post'}
