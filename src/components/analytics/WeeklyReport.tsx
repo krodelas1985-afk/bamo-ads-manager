@@ -52,11 +52,16 @@ export default function WeeklyReport({
       const res = await fetch('/api/analytics/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(clientId ? { client_id: clientId } : {}),
+        body: JSON.stringify(clientId ? { client_id: clientId } : { all: true }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Generation failed')
-      setReport(json.report)
+      if (json.report) {
+        setReport(json.report)
+      } else {
+        // all-clients generation (admin view): reload so the server refetches the latest report
+        window.location.reload()
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed')
     } finally {

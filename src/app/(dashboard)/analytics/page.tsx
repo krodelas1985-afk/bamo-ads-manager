@@ -3,8 +3,13 @@ import { redirect } from 'next/navigation'
 import Topbar from '@/components/layout/Topbar'
 import AnalyticsClient from '@/components/analytics/AnalyticsClient'
 import WeeklyReport from '@/components/analytics/WeeklyReport'
+import ClientSelector from '@/components/analytics/ClientSelector'
 
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams?: { client_id?: string }
+}) {
   const supabase = await createServerSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -17,7 +22,15 @@ export default async function AnalyticsPage() {
 
   if (!profile) redirect('/login')
 
-  const clientFilter = profile.role === 'client_admin' ? { client_id: profile.client_id } : {}
+  const isAdmin = profile.role === 'baymo_admin'
+  const selectedClientId = isAdmin ? (searchParams?.client_id ?? null) : profile.client_id
+
+  const clientFilter = selectedClientId ? { client_id: selectedClientId } : {}
+
+  // Admin: list of clients for the selector
+  const { data: clientList } = isAdmin
+    ? await supabase.from('clients').select('id, name').order('name')
+    : { data: null }
 
   // Fetch analytics data
   const [
@@ -106,10 +119,12 @@ export default async function AnalyticsPage() {
       />
       <div className="flex-1 overflow-y-auto">
         <div className="px-6 pt-6">
+          {isAdmin && <ClientSelector clients={clientList ?? []} />}
           <WeeklyReport
+            key={selectedClientId ?? 'all'}
             initialReport={latestReport ?? null}
             canGenerate={true}
-            clientId={profile.role === 'client_admin' ? profile.client_id : null}
+            clientId={selectedClientId}
           />
         </div>
         <AnalyticsClient
