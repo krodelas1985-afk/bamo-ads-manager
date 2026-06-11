@@ -19,7 +19,7 @@ export default async function PostsPage() {
   const isAdmin = profile.role === 'baymo_admin'
   const clientFilter = profile.role === 'client_admin' ? { client_id: profile.client_id } : {}
 
-  const [{ data: posts }, { data: socialAccounts }, { data: creatives }, { data: contents }, { data: clients }] =
+  const [{ data: posts }, { data: socialAccounts }, { data: creatives }, { data: contents }, { data: listings }, { data: clients }] =
     await Promise.all([
       supabase.from('ad_posts')
         .select('*')
@@ -41,6 +41,11 @@ export default async function PostsPage() {
         .select('id, client_id, title, caption, hook, hashtags')
         .match(clientFilter)
         .order('created_at', { ascending: false })
+        .limit(40),
+      supabase.from('ad_listings')
+        .select('id, client_id, property_name, price, city, listing_url')
+        .match(clientFilter)
+        .order('snapshotted_at', { ascending: false })
         .limit(40),
       isAdmin
         ? supabase.from('clients').select('id, name').eq('is_active', true).order('name')
@@ -64,6 +69,7 @@ export default async function PostsPage() {
           socialAccounts={socialAccounts ?? []}
           creatives={creatives ?? []}
           contents={contents ?? []}
+          listings={listings ?? []}
           clients={clients ?? []}
           defaultClientId={profile.client_id ?? null}
         />

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Facebook, Instagram, Send, Calendar,
-  BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, AlertTriangle, RotateCcw, X
+  BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, AlertTriangle, RotateCcw, X, Sparkles
 } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -72,18 +72,28 @@ interface Content {
   hashtags: string[] | null
 }
 
+interface Listing {
+  id: string
+  client_id: string | null
+  property_name: string | null
+  price: number | null
+  city: string | null
+  listing_url: string | null
+}
+
 interface Props {
   role: string
   posts: Post[]
   socialAccounts: SocialAccount[]
   creatives: Creative[]
   contents: Content[]
+  listings: Listing[]
   clients: { id: string; name: string }[]
   defaultClientId: string | null
 }
 
 export default function PostsClient({
-  role, posts: initialPosts, socialAccounts, creatives, contents, clients, defaultClientId,
+  role, posts: initialPosts, socialAccounts, creatives, contents, listings, clients, defaultClientId,
 }: Props) {
   const router = useRouter()
   const isAdmin = role === 'baymo_admin'
@@ -111,6 +121,14 @@ export default function PostsClient({
   const [scheduledTime, setScheduledTime] = useState('09:00')
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  // Compose-with-AI state
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiGoal, setAiGoal] = useState('new_listing')
+  const [aiTone, setAiTone] = useState('friendly')
+  const [aiListingId, setAiListingId] = useState('')
+  const [aiInstructions, setAiInstructions] = useState('')
+  const [generating, setGenerating] = useState(false)
+
   // Per-client filtered options
   const clientAccounts = useMemo(
     () => socialAccounts.filter(a => !isAdmin || a.client_id === selectedClientId),
@@ -124,6 +142,10 @@ export default function PostsClient({
   const clientContents = useMemo(
     () => contents.filter(c => !isAdmin || c.client_id === selectedClientId),
     [contents, selectedClientId, isAdmin]
+  )
+  const clientListings = useMemo(
+    () => listings.filter(l => !isAdmin || l.client_id === selectedClientId),
+    [listings, selectedClientId, isAdmin]
   )
   const visiblePosts = useMemo(
     () => posts.filter(p => !isAdmin || !selectedClientId || p.client_id === selectedClientId),
@@ -172,6 +194,37 @@ export default function PostsClient({
       setScheduledDate('')
     }
     if (isAdmin && p.client_id) setSelectedClientId(p.client_id)
+  }
+
+  async function generateWithAI() {
+    if (isAdmin && !selectedClientId) { setNotice('Select a client first'); return }
+    setGenerating(true)
+    setNotice(null)
+    try {
+      const res = await fetch('/api/posts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: isAdmin ? selectedClientId : undefined,
+          goal: aiGoal,
+          tone: aiTone,
+          platform: platforms.includes('facebook') ? 'facebook' : 'instagram',
+          post_type: postType,
+          listing_id: aiListingId || null,
+          instructions: aiInstructions || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Generation failed')
+      setCaption(json.caption ?? '')
+      setHashtags((json.hashtags ?? []).join(' '))
+      if (json.suggested_link && !linkUrl) setLinkUrl(json.suggested_link)
+      if (json.content_id) setContentId(json.content_id)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const fullMessage = () =>
@@ -418,6 +471,78 @@ export default function PostsClient({
               </select>
             </div>
           )}
+
+          {/* Compose with AI */}
+          <div className="rounded-lg border border-[#E8660A]/30 bg-[#FDE8D8]/30">
+            <button
+              onClick={() => setAiOpen(o => !o)}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs font-semibold text-[#E8660A]"
+            >
+              <span className="flex items-center gap-1.5"><Sparkles size={13} /> Compose with AI</span>
+              <span className="text-[10px]">{aiOpen ? '▲' : '▼'}</span>
+            </button>
+            {aiOpen && (
+              <div className="px-3 pb-3 flex flex-col gap-2">
+                <div>
+                  <label className="text-[10px] font-medium text-[#1A2E5A] mb-1 block">Goal</label>
+                  <select className="bamo-input text-xs" value={aiGoal} onChange={e => setAiGoal(e.target.value)}>
+                    <option value="new_listing">New listing announcement</option>
+                    <option value="open_house">Open house / tripping invite</option>
+                    <option value="price_drop">Price drop</option>
+                    <option value="lead_generation">Lead generation</option>
+                    <option value="brand_authority">Brand authority / tips</option>
+                    <option value="market_update">Market update</option>
+                    <option value="greeting">Holiday / greeting</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-[#1A2E5A] mb-1 block">Tone</label>
+                  <div className="flex flex-wrap gap-1">
+                    {['professional', 'friendly', 'taglish', 'urgent', 'luxury'].map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setAiTone(t)}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium capitalize ${
+                          aiTone === t ? 'bg-[#E8660A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {clientListings.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-medium text-[#1A2E5A] mb-1 block">
+                      Listing <span className="text-gray-400 font-normal">optional</span>
+                    </label>
+                    <select className="bamo-input text-xs" value={aiListingId} onChange={e => setAiListingId(e.target.value)}>
+                      <option value="">No listing — brand-level post</option>
+                      {clientListings.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.property_name ?? 'Untitled'}{l.city ? ` · ${l.city}` : ''}{l.price ? ` · ₱${Number(l.price).toLocaleString('en-PH')}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <input
+                  className="bamo-input text-xs"
+                  type="text"
+                  placeholder="Anything else? (e.g. mention free site visit)"
+                  value={aiInstructions}
+                  onChange={e => setAiInstructions(e.target.value)}
+                />
+                <button
+                  onClick={generateWithAI}
+                  disabled={generating}
+                  className="btn-orange w-full justify-center py-1.5 text-xs disabled:opacity-50"
+                >
+                  <Sparkles size={11} /> {generating ? 'Generating...' : caption ? 'Regenerate' : 'Generate'}
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Caption */}
           <div>
