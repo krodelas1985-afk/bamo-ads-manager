@@ -2,6 +2,13 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // Server-to-server endpoints that authenticate themselves (shared secret).
+  // Without this, requests with no session cookie get redirected to /login,
+  // which breaks the n8n scheduler (POST follows the redirect and 405s).
+  if (request.nextUrl.pathname === '/api/posts/run-scheduler') {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
