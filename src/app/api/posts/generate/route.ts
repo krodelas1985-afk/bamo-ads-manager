@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 export const maxDuration = 60
 
+const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY ?? '').replace(/[^\x21-\x7E]/g, '')
+
 const GOALS: Record<string, string> = {
   new_listing: 'Announce a property that just hit the market. Create excitement and urgency to inquire or book a viewing.',
   open_house: 'Invite people to an open house / tripping. Emphasize the date, ease of visiting, and what they will see.',
@@ -30,6 +32,15 @@ const TONES: Record<string, string> = {
  * and returns the generated fields for the composer.
  */
 export async function POST(request: NextRequest) {
+  try {
+    return await handle(request)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: `Generation crashed: ${message.slice(0, 300)}` }, { status: 500 })
+  }
+}
+
+async function handle(request: NextRequest) {
   // Auth
   const supabase = await createServerSupabaseClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -121,11 +132,14 @@ Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
 {"title": "short internal label for this content", "hook": "first line that stops the scroll", "caption": "the full post caption including the hook as its first line", "hashtags": ["#tag1", "#tag2"], "cta": "the closing call to action used"}`
 
   // Call Claude
+  if (!ANTHROPIC_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is missing or contains invalid characters - fix it in Vercel env vars' }, { status: 500 })
+  }
   const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY!,
+      'x-api-key': ANTHROPIC_KEY,
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({

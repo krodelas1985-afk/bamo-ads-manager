@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
+const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY ?? '').replace(/[^\x21-\x7E]/g, '')
+
 export async function POST(request: NextRequest) {
   try {
     // Auth gate — this route was previously open to the internet,
@@ -19,12 +21,15 @@ export async function POST(request: NextRequest) {
 
     const { prompt } = await request.json()
     if (!prompt) return NextResponse.json({ error: 'No prompt' }, { status: 400 })
+    if (!ANTHROPIC_KEY) {
+      return NextResponse.json({ error: 'ANTHROPIC_API_KEY is missing or contains invalid characters - fix it in Vercel env vars' }, { status: 500 })
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'x-api-key': ANTHROPIC_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
