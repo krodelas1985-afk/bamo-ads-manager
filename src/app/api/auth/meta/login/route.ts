@@ -7,8 +7,11 @@ const FB_OAUTH_VERSION = 'v21.0'
 /**
  * GET /api/auth/meta/login
  * Starts the operator OAuth flow. baymo_admin only.
- * Requests Marketing API scopes — the operator's personal FB user
- * already holds advertiser access on client ad accounts.
+ *
+ * Scopes now include page publishing (pages_manage_posts) and the
+ * Instagram publishing pair. In dev mode these are grantable to app
+ * users without App Review, and they work on any page where the
+ * operator holds a page role.
  */
 export async function GET(request: Request) {
   const appId = process.env.META_APP_ID
@@ -48,7 +51,21 @@ export async function GET(request: Request) {
     client_id: appId,
     redirect_uri: redirectUri,
     state,
-    scope: ['ads_management', 'ads_read', 'business_management'].join(','),
+    scope: [
+      // Marketing API
+      'ads_management',
+      'ads_read',
+      'business_management',
+      // Pages — listing, reading, and publishing
+      'pages_show_list',
+      'pages_read_engagement',
+      'pages_manage_posts',
+      // Messenger (keeps Campaign Engine grant explicit)
+      'pages_messaging',
+      // Instagram publishing (placeholder until IG accounts are linked)
+      'instagram_basic',
+      'instagram_content_publish',
+    ].join(','),
     response_type: 'code',
   })
 

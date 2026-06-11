@@ -4,12 +4,23 @@ import { createAdminClient } from '@/lib/supabase-admin'
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 
+type FbPage = {
+  id: string
+  name?: string
+  access_token?: string
+  instagram_business_account?: { id: string; username?: string }
+}
+
 /**
  * GET /api/auth/meta/callback
  * 1. Validates CSRF state
  * 2. Exchanges code -> short-lived token -> long-lived token (~60 days)
  * 3. Fetches FB user identity + granted scopes
  * 4. Deactivates previous operator tokens, inserts the new one
+ * 5. NEW: syncs /me/accounts into ad_social_accounts (FB page rows +
+ *    IG rows where an IG business account is linked) and refreshes
+ *    clients.fb_page_token for matching clients. Page tokens derived
+ *    from a long-lived user token do not expire.
  */
 export async function GET(request: NextRequest) {
   const appId = process.env.META_APP_ID
@@ -99,9 +110,125 @@ export async function GET(request: NextRequest) {
     })
     if (insertError) throw new Error(insertError.message)
 
-    return NextResponse.redirect(settingsUrl('connected'))
+    // 5. sync pages + IG accounts into ad_social_accounts
+    //    Non-fatal: a sync failure should not invalidate the connect flow.
+    let syncedPages = 0
+    let syncedIg = 0
+    try {
+      const pagesRes = await fetch(
+        `${GRAPH}/me/accounts?` +
+          new URLSearchParams({
+            fields: 'id,name,access_token,instagram_business_account{id,username}',
+            limit: '100',
+            access_token: longLivedToken,
+          })
+      )
+      const pagesJson = await pagesRes.json()
+      if (!pagesRes.ok) throw new Error(pagesJson.error?.message ?? 'Failed to list pages')
+      const pages: FbPage[] = pagesJson.data ?? []
+
+      // client lookup by fb_page_id for client_id mapping
+      const { data: clientRows } = await admin
+        .from('clients')
+        .select('id, fb_page_id')
+        .not('fb_page_id', 'is', null)
+      const clientByPage = new Map<string, string>(
+        (clientRows ?? []).map((c: { id: string; fb_page_id: string }) => [c.fb_page_id, c.id])
+      )
+
+      for (const page of pages) {
+        if (!page.access_token) continue
+        const clientId = clientByPage.get(page.id) ?? null
+
+        await upsertSocialAccount(admin, {
+          client_id: clientId,
+          platform: 'facebook',
+          account_id: page.id,
+          account_name: page.name ?? null,
+          access_token: page.access_token,
+          meta: {},
+        })
+        syncedPages++
+
+        // refresh the legacy column so Campaign Engine keeps a fresh token
+        if (clientId) {
+          await admin
+            .from('clients')
+            .update({ fb_page_token: page.access_token })
+            .eq('id', clientId)
+        }
+
+        // IG business account linked to this page -> instagram row
+        if (page.instagram_business_account?.id) {
+          await upsertSocialAccount(admin, {
+            client_id: clientId,
+            platform: 'instagram',
+            account_id: page.instagram_business_account.id,
+            account_name: page.instagram_business_account.username ?? null,
+            // IG publishing authenticates with the linked page token
+            access_token: page.access_token,
+            meta: { linked_fb_page_id: page.id },
+          })
+          syncedIg++
+        }
+      }
+    } catch (syncErr) {
+      const reason = syncErr instanceof Error ? syncErr.message : 'page_sync_failed'
+      return NextResponse.redirect(settingsUrl(`connected&pages=error&reason=${encodeURIComponent(reason)}`))
+    }
+
+    return NextResponse.redirect(settingsUrl(`connected&pages=${syncedPages}&ig=${syncedIg}`))
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'unknown'
     return NextResponse.redirect(settingsUrl(`error&reason=${encodeURIComponent(reason)}`))
+  }
+}
+
+/**
+ * Manual upsert keyed on (platform, account_id). We avoid Postgres
+ * ON CONFLICT here because client_id is nullable and NULLs are
+ * distinct in unique indexes.
+ */
+async function upsertSocialAccount(
+  admin: ReturnType<typeof createAdminClient>,
+  row: {
+    client_id: string | null
+    platform: 'facebook' | 'instagram'
+    account_id: string
+    account_name: string | null
+    access_token: string
+    meta: Record<string, unknown>
+  }
+) {
+  const { data: existing } = await admin
+    .from('ad_social_accounts')
+    .select('id')
+    .eq('platform', row.platform)
+    .eq('account_id', row.account_id)
+    .maybeSingle()
+
+  if (existing?.id) {
+    await admin
+      .from('ad_social_accounts')
+      .update({
+        client_id: row.client_id,
+        account_name: row.account_name,
+        access_token: row.access_token,
+        token_expires_at: null, // page tokens from long-lived user tokens don't expire
+        is_active: true,
+        meta: row.meta,
+      })
+      .eq('id', existing.id)
+  } else {
+    await admin.from('ad_social_accounts').insert({
+      client_id: row.client_id,
+      platform: row.platform,
+      account_id: row.account_id,
+      account_name: row.account_name,
+      access_token: row.access_token,
+      token_expires_at: null,
+      is_active: true,
+      meta: row.meta,
+    })
   }
 }
