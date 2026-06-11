@@ -1,10 +1,11 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Facebook, Instagram, Send, Calendar,
-  BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, AlertTriangle, RotateCcw, X, Sparkles
+  BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, AlertTriangle, RotateCcw, X, Sparkles, Image as ImageIcon
 } from 'lucide-react'
+import AssetPicker, { type PickerItem } from './AssetPicker'
 
 const STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-[#E8EBF3] text-[#1A2E5A]',
@@ -81,6 +82,15 @@ interface Listing {
   listing_url: string | null
 }
 
+interface Asset {
+  id: string
+  client_id: string | null
+  file_type: string
+  public_url: string
+  thumbnail_url: string | null
+  file_name: string
+}
+
 interface Props {
   role: string
   posts: Post[]
@@ -89,11 +99,12 @@ interface Props {
   contents: Content[]
   listings: Listing[]
   clients: { id: string; name: string }[]
+  assets: Asset[]
   defaultClientId: string | null
 }
 
 export default function PostsClient({
-  role, posts: initialPosts, socialAccounts, creatives, contents, listings, clients, defaultClientId,
+  role, posts: initialPosts, socialAccounts, creatives, contents, listings, clients, assets, defaultClientId,
 }: Props) {
   const router = useRouter()
   const isAdmin = role === 'baymo_admin'
@@ -116,6 +127,9 @@ export default function PostsClient({
   const [hashtags, setHashtags] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [creativeId, setCreativeId] = useState('')
+  const [mediaItems, setMediaItems] = useState<PickerItem[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const skipMediaClear = useRef(false)
   const [contentId, setContentId] = useState('')
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('09:00')
@@ -139,6 +153,37 @@ export default function PostsClient({
     () => creatives.filter(c => !isAdmin || c.client_id === selectedClientId),
     [creatives, selectedClientId, isAdmin]
   )
+  const clientAssets = useMemo(
+    () => assets.filter(a => !isAdmin || a.client_id === selectedClientId),
+    [assets, selectedClientId, isAdmin]
+  )
+  const pickerItems = useMemo<PickerItem[]>(() => [
+    ...clientAssets.map(a => ({
+      id: `asset-${a.id}`,
+      url: a.public_url,
+      thumb: a.thumbnail_url ?? (a.file_type === 'image' ? a.public_url : null),
+      type: (a.file_type === 'video' ? 'video' : 'image') as 'image' | 'video',
+      label: a.file_name,
+      source: 'upload' as const,
+    })),
+    ...clientCreatives.map(c => ({
+      id: `creative-${c.id}`,
+      url: c.asset_url,
+      thumb: c.thumbnail_url ?? (c.creative_type !== 'video' ? c.asset_url : null),
+      type: (c.creative_type === 'video' ? 'video' : 'image') as 'image' | 'video',
+      label: `${c.creative_type} · ${c.id.slice(0, 8)}`,
+      source: 'creative' as const,
+    })),
+  ], [clientAssets, clientCreatives])
+
+  // Media belongs to a client — switching clients clears the selection.
+  // skipMediaClear lets loadIntoForm restore another client's post without being wiped.
+  useEffect(() => {
+    if (skipMediaClear.current) { skipMediaClear.current = false; return }
+    setMediaItems([])
+    setCreativeId('')
+  }, [selectedClientId])
+
   const clientContents = useMemo(
     () => contents.filter(c => !isAdmin || c.client_id === selectedClientId),
     [contents, selectedClientId, isAdmin]
@@ -175,6 +220,7 @@ export default function PostsClient({
   function resetForm() {
     setCaption(''); setHashtags(''); setLinkUrl('')
     setScheduledDate(''); setCreativeId(''); setContentId('')
+    setMediaItems([])
     setEditingId(null)
   }
 
@@ -186,6 +232,17 @@ export default function PostsClient({
     setLinkUrl(p.link_url ?? '')
     setCreativeId(p.creative_id ?? '')
     setContentId(p.content_id ?? '')
+    setMediaItems((p.media_urls ?? []).map((url, i) => {
+      const isVid = /\.(mp4|mov|webm)(\?|$)/i.test(url)
+      return {
+        id: `existing-${i}`,
+        url,
+        thumb: isVid ? null : url,
+        type: (isVid ? 'video' : 'image') as 'image' | 'video',
+        label: `media ${i + 1}`,
+        source: 'upload' as const,
+      }
+    }))
     if (p.scheduled_at) {
       const d = new Date(p.scheduled_at)
       setScheduledDate(d.toISOString().slice(0, 10))
@@ -193,7 +250,10 @@ export default function PostsClient({
     } else {
       setScheduledDate('')
     }
-    if (isAdmin && p.client_id) setSelectedClientId(p.client_id)
+    if (isAdmin && p.client_id) {
+      skipMediaClear.current = true
+      setSelectedClientId(p.client_id)
+    }
   }
 
   async function generateWithAI() {
@@ -231,7 +291,9 @@ export default function PostsClient({
     hashtags.trim() ? `${caption.trim()}\n\n${hashtags.trim()}` : caption.trim()
 
   async function handleSubmit(action: 'draft' | 'schedule' | 'publish') {
-    if (!caption.trim() && !creativeId) { setNotice('Add a caption or pick a creative first'); return }
+    if (!caption.trim() && !creativeId && mediaItems.length === 0) { setNotice('Add a caption, media, or a creative first'); return }
+    const carouselImages = mediaItems.filter(m => m.type === 'image').length
+    if (postType === 'carousel' && carouselImages < 2) { setNotice('A carousel needs 2–10 images — choose them from the Asset Library'); return }
     if (platforms.length === 0) { setNotice('Select at least one platform'); return }
     if (isAdmin && !selectedClientId) { setNotice('Select a client first'); return }
     if (action === 'schedule' && !scheduledDate) { setNotice('Pick a date to schedule'); return }
@@ -253,6 +315,7 @@ export default function PostsClient({
             link_url: linkUrl || null,
             creative_id: creativeId || null,
             content_id: contentId || null,
+            media_urls: mediaItems.map(m => m.url),
             post_type: postType,
             scheduled_at: scheduledAt,
             status: action === 'schedule' ? 'scheduled' : 'draft',
@@ -285,6 +348,7 @@ export default function PostsClient({
           link_url: linkUrl || null,
           creative_id: creativeId || null,
           content_id: contentId || null,
+          media_urls: mediaItems.map(m => m.url),
           action,
           scheduled_at: scheduledAt,
         }),
@@ -557,6 +621,45 @@ export default function PostsClient({
           </div>
 
           {/* Creative */}
+          {/* Media — Asset Library picker */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
+              Media <span className="text-gray-400 font-normal">optional · up to 10 photos or 1 video</span>
+            </label>
+            <button
+              onClick={() => {
+                if (isAdmin && !selectedClientId) { setNotice('Select a client first'); return }
+                setPickerOpen(true)
+              }}
+              className="bamo-input text-xs text-left flex items-center gap-2 w-full hover:border-[#E8660A]/60"
+            >
+              <ImageIcon size={13} className="text-[#E8660A] flex-shrink-0" />
+              {mediaItems.length === 0 ? 'Choose from Asset Library…' : `${mediaItems.length} selected — change`}
+            </button>
+            {mediaItems.length > 0 && (
+              <div className="mt-1.5 grid grid-cols-5 gap-1.5">
+                {mediaItems.map(m => (
+                  <div key={m.url} className="relative group">
+                    {m.type === 'video' ? (
+                      <div className="w-full h-12 rounded-md border border-black/10 bg-[#1A2E5A] flex items-center justify-center text-white text-[8px] font-semibold">VIDEO</div>
+                    ) : (
+                      <img src={m.thumb ?? m.url} alt={m.label} className="w-full h-12 rounded-md border border-black/10 object-cover" />
+                    )}
+                    <button
+                      onClick={() => setMediaItems(prev => prev.filter(x => x.url !== m.url))}
+                      className="absolute -top-1 -right-1 bg-[#A32D2D] text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={9} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {mediaItems.length > 0 && (
+              <div className="text-[10px] text-gray-400 mt-1">Asset media is used instead of a Creative — picking one clears the other.</div>
+            )}
+          </div>
+
           {clientCreatives.length > 0 && (
             <div>
               <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
@@ -565,7 +668,10 @@ export default function PostsClient({
               <select
                 className="bamo-input text-xs"
                 value={creativeId}
-                onChange={e => setCreativeId(e.target.value)}
+                onChange={e => {
+                  if (e.target.value) setMediaItems([])
+                  setCreativeId(e.target.value)
+                }}
               >
                 <option value="">No creative selected</option>
                 {clientCreatives.map(c => (
@@ -658,6 +764,18 @@ export default function PostsClient({
           </div>
         </div>
       </div>
+
+      <AssetPicker
+        open={pickerOpen}
+        items={pickerItems}
+        initialSelected={mediaItems.map(m => m.url)}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={sel => {
+          setMediaItems(sel)
+          if (sel.length > 0) setCreativeId('')
+          setPickerOpen(false)
+        }}
+      />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden p-5 gap-3">
