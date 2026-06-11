@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Topbar from '@/components/layout/Topbar'
 import AnalyticsClient from '@/components/analytics/AnalyticsClient'
+import WeeklyReport from '@/components/analytics/WeeklyReport'
 
 export default async function AnalyticsPage() {
   const supabase = await createServerSupabaseClient()
@@ -24,6 +25,7 @@ export default async function AnalyticsPage() {
     { data: campaigns },
     { data: websiteAnalytics },
     { data: posts },
+    { data: latestReport },
   ] = await Promise.all([
     supabase
       .from('ad_analytics')
@@ -47,6 +49,13 @@ export default async function AnalyticsPage() {
       .from('ad_posts')
       .select('id, status, platform')
       .match(clientFilter),
+    supabase
+      .from('ad_reports')
+      .select('*')
+      .match(clientFilter)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   // Aggregate totals
@@ -95,7 +104,14 @@ export default async function AnalyticsPage() {
           </button>
         }
       />
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 pt-6">
+          <WeeklyReport
+            initialReport={latestReport ?? null}
+            canGenerate={true}
+            clientId={profile.role === 'client_admin' ? profile.client_id : null}
+          />
+        </div>
         <AnalyticsClient
           analytics={analytics ?? []}
           totals={totals}
