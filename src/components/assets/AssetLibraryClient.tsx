@@ -354,6 +354,18 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
               </button>
             </div>
             <div className="px-4 py-3 grid grid-cols-3 gap-3">
+              {selected.file_type === 'video' && selected.public_url && (
+                <div className="col-span-3">
+                  <video
+                    key={selected.id}
+                    src={selected.public_url}
+                    poster={selected.thumbnail_url ?? undefined}
+                    controls
+                    preload="metadata"
+                    className="w-full max-h-72 rounded-lg bg-black"
+                  />
+                </div>
+              )}
               {[
                 { label: 'Type', value: `${selected.file_type} · ${selected.mime_type?.split('/')[1]?.toUpperCase() ?? '—'}` },
                 { label: 'Size', value: selected.file_size_bytes ? formatBytes(selected.file_size_bytes) : '—' },
@@ -484,6 +496,13 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
                       {asset.file_type === 'image' && asset.public_url ? (
                         <img
                           src={asset.public_url}
+                          alt={asset.file_name}
+                          className="w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                      ) : asset.file_type === 'video' && asset.thumbnail_url ? (
+                        <img
+                          src={asset.thumbnail_url}
                           alt={asset.file_name}
                           className="w-full h-full object-cover"
                           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
