@@ -220,14 +220,8 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
         pollJob(data.creatomate_render_id)
 
       } else {
-        // Simulated path for other sources
-        const steps = ['Preparing template...', 'Applying listing data...', 'Generating creative...', 'Almost done...']
-        for (const step of steps) {
-          setGeneratingStep(step)
-          await new Promise(r => setTimeout(r, 700))
-        }
         setGenerating(false)
-        setGenerated(true)
+        setError('This generation source is coming in v1.1 — Creatomate video is the available pipeline today.')
       }
     } catch (err: any) {
       setGenerating(false)
@@ -304,18 +298,23 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
           <div>
             <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Creative type</label>
             <div className="flex gap-2">
-              {TYPES.map(t => (
-                <button key={t} onClick={() => setCreativeType(t)}
+              {TYPES.map(t => {
+                const locked = source === 'creatomate' && t !== 'video'
+                return (
+                <button key={t} onClick={() => !locked && setCreativeType(t)} disabled={locked}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors flex items-center justify-center gap-1.5 ${
-                    creativeType === t ? 'bg-[#1A2E5A] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                    creativeType === t ? 'bg-[#1A2E5A] text-white' : locked ? 'border border-black/5 text-gray-300 cursor-not-allowed' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
                   }`}>
                   {t === 'image' && <ImageIcon size={13} />}
                   {t === 'video' && <Video size={13} />}
                   {t === 'carousel' && <Layout size={13} />}
                   {t}
                 </button>
-              ))}
+              )})}
             </div>
+            {source === 'creatomate' && (
+              <div className="text-[10px] text-gray-400 mt-1">Creatomate generates video only — image &amp; carousel arrive with Canva/Fal.ai in v1.1.</div>
+            )}
           </div>
 
           {/* Source */}
@@ -323,7 +322,7 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
             <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Generation source</label>
             <div className="grid grid-cols-2 gap-2">
               {SOURCES.map(({ id, label, sub, icon: Icon, ready }) => (
-                <button key={id} onClick={() => setSource(id)}
+                <button key={id} onClick={() => { setSource(id); if (id === 'creatomate') setCreativeType('video') }}
                   className={`p-3 rounded-lg border text-left transition-colors relative ${
                     source === id ? 'border-[#E8660A] bg-[#FDE8D8]' : 'border-black/10 hover:bg-gray-50'
                   }`}>
@@ -590,9 +589,9 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
             <div className="bg-[#FCEBEB] text-[#A32D2D] text-xs rounded-lg px-3 py-2.5">{error}</div>
           )}
 
-          <button onClick={handleGenerate} disabled={generating} className="btn-orange w-full justify-center py-2.5">
+          <button onClick={handleGenerate} disabled={generating || !isCreatomateVideo} className="btn-orange w-full justify-center py-2.5 disabled:opacity-40">
             <Sparkles size={14} />
-            {generating ? generatingStep : 'Generate Creative'}
+            {generating ? generatingStep : isCreatomateVideo ? 'Generate Creative' : 'Select Creatomate + Video to generate'}
           </button>
         </div>
       </div>
