@@ -41,6 +41,14 @@ interface Asset {
   thumbnail_url: string | null
 }
 
+interface MusicTrack {
+  id: string
+  name: string
+  mood: string | null
+  url: string
+  duration_seconds: number | null
+}
+
 interface Template {
   id: string
   client_id: string | null
@@ -48,6 +56,7 @@ interface Template {
   template_id: string
   thumbnail_url: string | null
   is_default: boolean | null
+  supports_music: boolean | null
 }
 
 interface CreativeFormProps {
@@ -55,6 +64,7 @@ interface CreativeFormProps {
   clientName: string | null
   clients?: { id: string; name: string }[]
   templates: Template[]
+  musicTracks: MusicTrack[]
   listings: any[]
   contents: any[]
   assets: Asset[]
@@ -65,7 +75,7 @@ interface CreativeResult { url: string; thumb?: string; id?: string }
 
 type DataSource = 'listing' | 'assets'
 
-export default function CreativeForm({ clientId, clientName, clients = [], templates, listings, contents, assets, defaultContentId }: CreativeFormProps) {
+export default function CreativeForm({ clientId, clientName, clients = [], templates, musicTracks, listings, contents, assets, defaultContentId }: CreativeFormProps) {
   const router   = useRouter()
   const supabase = createClient()
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -91,6 +101,10 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
     address: '', details1: '', details2: '', agentName: '', agentEmail: '', agentPhone: '',
   })
 
+  const [musicUrl, setMusicUrl] = useState('')
+  const [previewing, setPreviewing] = useState(false)
+  const previewRef = useRef<HTMLAudioElement | null>(null)
+
   // Generation state
   const [generating,     setGenerating]     = useState(false)
   const [generatingStep, setGeneratingStep] = useState('')
@@ -104,6 +118,8 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
     ? (clients.find(c => c.id === activeClientId)?.name ?? 'BaMo Realty')
     : (clientName ?? 'BaMo Realty')
   const visibleTemplates = templates.filter(t => t.client_id === null || t.client_id === activeClientId)
+  const selectedTemplate = templates.find(t => t.template_id === selectedTemplateId)
+  const templateSupportsMusic = !!selectedTemplate?.supports_music
   const scopedListings = isAdmin ? listings.filter((l: any) => l.client_id === activeClientId) : listings
   const scopedAssets = isAdmin ? assets.filter((a: any) => (a as any).client_id === activeClientId) : assets
 
@@ -112,6 +128,9 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
   const imageAssets       = scopedAssets.filter((a: any) => a.file_type === 'image')
 
   useEffect(() => {
+    previewRef.current?.pause()
+    setPreviewing(false)
+    setMusicUrl('')
     setListingId(scopedListings[0]?.id ?? '')
     setSelectedPhotos({ photo1: '', photo2: '', photo3: '', photo4: '', photo5: '', agentPhoto: '' })
   }, [activeClientId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -178,6 +197,7 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
           template_id: selectedTemplateId,
           prompt_id:   null,
           brand_name:  activeClientName,
+          music_url:   templateSupportsMusic ? (musicUrl || null) : null,
         }
 
         if (dataSource === 'listing' && listingId) {
@@ -374,6 +394,50 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Creatomate-specific: soundtrack ── */}
+          {isCreatomateVideo && templateSupportsMusic && musicTracks.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
+                Soundtrack <span className="text-gray-400 font-normal">licensed library</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="bamo-input text-xs flex-1"
+                  value={musicUrl}
+                  onChange={e => {
+                    setMusicUrl(e.target.value)
+                    previewRef.current?.pause()
+                    setPreviewing(false)
+                  }}
+                >
+                  <option value="">Template default</option>
+                  {musicTracks.map(t => (
+                    <option key={t.id} value={t.url}>
+                      {t.name}{t.mood ? ` — ${t.mood}` : ''}{t.duration_seconds ? ` (${t.duration_seconds}s)` : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!musicUrl}
+                  onClick={() => {
+                    if (!previewRef.current) previewRef.current = new Audio()
+                    const a = previewRef.current
+                    if (previewing) { a.pause(); setPreviewing(false); return }
+                    a.src = musicUrl
+                    a.play()
+                    setPreviewing(true)
+                    a.onended = () => setPreviewing(false)
+                  }}
+                  className="btn-ghost text-xs px-3 disabled:opacity-40"
+                >
+                  {previewing ? '⏸ Stop' : '▶ Preview'}
+                </button>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1">Replaces the template's built-in track for this render.</div>
             </div>
           )}
 
