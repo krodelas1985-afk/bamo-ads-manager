@@ -1,0 +1,992 @@
+﻿{
+    "updatedAt":  "2026-06-12T06:39:21.053Z",
+    "createdAt":  "2026-06-02T13:52:37.141Z",
+    "id":  "0T0wSqshQOCGV1a9",
+    "name":  "BaMo Ads - Generate Video (Creatomate)",
+    "description":  "Receives video generation request, fetches listing data (incl. agent_photo_url) or uses manual input, maps to Creatomate template modifications, starts render, creates a creative_job for async tracking.",
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "bamo-video-generate",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "f48b4d94-78a6-4522-912d-64bf440f4998",
+                      "name":  "Video Request Webhook",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       0,
+                                       96
+                                   ],
+                      "webhookId":  "c6d52666-9e08-4f0c-81b9-7212e5471a8f"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose",
+                                                                            "version":  1
+                                                                        },
+                                                            "combinator":  "and",
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "cond1",
+                                                                                   "leftValue":  "={{ $json.body.data_source }}",
+                                                                                   "rightValue":  "listing",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "9ce9ca71-27ab-4b95-913e-b052a477bebc",
+                      "name":  "Check Data Source",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       224,
+                                       96
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "=https://zyfkjxepykwpfzmkxitb.supabase.co/rest/v1/ad_listings?id=eq.{{ $json.body.listing_id }}\u0026select=*",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "cf3aa914-dd81-4ae8-b107-280a6f23dc41",
+                      "name":  "Get Listing",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       448,
+                                       0
+                                   ],
+                      "credentials":  {
+                                          "httpBearerAuth":  {
+                                                                 "id":  "TCsaiCYEhMJwWn6Q",
+                                                                 "name":  "Bearer Auth account"
+                                                             },
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "gk4EtMzx3qwlc7fU",
+                                                                 "name":  "Supabase Service Role"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "a1",
+                                                                                     "name":  "photo1",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.photo_urls?.[0] ?? $json.primary_photo_url ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a2",
+                                                                                     "name":  "photo2",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.photo_urls?.[1] ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a3",
+                                                                                     "name":  "photo3",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.photo_urls?.[2] ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a4",
+                                                                                     "name":  "photo4",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.photo_urls?.[3] ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a5",
+                                                                                     "name":  "photo5",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.photo_urls?.[4] ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a6",
+                                                                                     "name":  "address",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.location ?? $json.city ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a7",
+                                                                                     "name":  "details1",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.floor_area }} sqm\n{{ $json.bedrooms }} Bedrooms\n{{ $json.bathrooms }} Bathrooms"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a8",
+                                                                                     "name":  "details2",
+                                                                                     "type":  "string",
+                                                                                     "value":  "=PHP {{ $json.price }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a9",
+                                                                                     "name":  "agentName",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.agent_name ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a10",
+                                                                                     "name":  "agentEmail",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.agent_email ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a11",
+                                                                                     "name":  "agentPhone",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.agent_phone ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a12",
+                                                                                     "name":  "brandName",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $(\"Video Request Webhook\").item.json.body.brand_name ?? \"BaMo Realty\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a13",
+                                                                                     "name":  "agentPhoto",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.agent_photo_url ?? $(\"Video Request Webhook\").item.json.body.agent_photo ?? \"\" }}"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "9a08a106-1e31-427a-88ac-01a3dc0d9a2e",
+                      "name":  "Normalize From Listing",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       672,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "m1",
+                                                                                     "name":  "photo1",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.photo1 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m2",
+                                                                                     "name":  "photo2",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.photo2 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m3",
+                                                                                     "name":  "photo3",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.photo3 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m4",
+                                                                                     "name":  "photo4",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.photo4 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m5",
+                                                                                     "name":  "photo5",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.photo5 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m6",
+                                                                                     "name":  "address",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.address ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m7",
+                                                                                     "name":  "details1",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.details1 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m8",
+                                                                                     "name":  "details2",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.details2 ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m9",
+                                                                                     "name":  "agentName",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.agentName ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m10",
+                                                                                     "name":  "agentEmail",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.agentEmail ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m11",
+                                                                                     "name":  "agentPhone",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.agentPhone ?? \"\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m12",
+                                                                                     "name":  "brandName",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.brandName ?? \"BaMo Realty\" }}"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "m13",
+                                                                                     "name":  "agentPhoto",
+                                                                                     "type":  "string",
+                                                                                     "value":  "={{ $json.body.manual_data.agentPhoto ?? \"\" }}"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "4c14f4ae-1360-4bb9-b43b-e088eb353d4c",
+                      "name":  "Normalize From Manual",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       672,
+                                       192
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.creatomate.com/v2/renders",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpBearerAuth",
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ template_id: $(\"Video Request Webhook\").item.json.body.template_id, modifications: { \"Photo-1.source\": $json.photo1, \"Photo-2.source\": $json.photo2, \"Photo-3.source\": $json.photo3, \"Photo-4.source\": $json.photo4, \"Photo-5.source\": $json.photo5, \"Address.text\": $json.address, \"Details-1.text\": $json.details1, \"Details-2.text\": $json.details2, \"Picture.source\": $json.agentPhoto, \"Name.text\": $json.agentName, \"Email.text\": $json.agentEmail, \"Phone-Number.text\": $json.agentPhone, \"Brand-Name.text\": $json.brandName, ...($(\"Video Request Webhook\").item.json.body.music_url ? { \"Music.source\": $(\"Video Request Webhook\").item.json.body.music_url } : {}) }, webhook_url: \"https://n8n-bahaymo.onrender.com/webhook/bamo-video-complete\" }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "4db2980b-7017-462a-bb81-52f932acce1c",
+                      "name":  "Start Creatomate Render",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       896,
+                                       96
+                                   ],
+                      "credentials":  {
+                                          "httpBearerAuth":  {
+                                                                 "id":  "NEJcstQDnq3HPGLK",
+                                                                 "name":  "Createomate"
+                                                             },
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "XU2cLPNQEj6KGmol",
+                                                                 "name":  "Creatomate API Key"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://zyfkjxepykwpfzmkxitb.supabase.co/rest/v1/creative_jobs",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpBearerAuth",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Prefer",
+                                                                                         "value":  "return=representation"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "apikey",
+                                                                                         "value":  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5ZmtqeGVweWt3cGZ6bWt4aXRiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDc3NTY1MSwiZXhwIjoyMDkwMzUxNjUxfQ.wYDdUp6IQrLwG01HNYHJ_u0XoaVAB-58TaHBNoBbxSs"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ client_id: $(\"Video Request Webhook\").item.json.body.client_id, creative_id: null, job_id: $json.id, job_type: \"creatomate_video\", request_payload: { template_id: $(\"Video Request Webhook\").item.json.body.template_id, prompt_id: $(\"Video Request Webhook\").item.json.body.prompt_id }, status: \"processing\" }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "44d9a49f-c658-48f3-9888-7e840e100525",
+                      "name":  "Create Render Job",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       1120,
+                                       96
+                                   ],
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "gk4EtMzx3qwlc7fU",
+                                                                 "name":  "Supabase Service Role"
+                                                             },
+                                          "httpBearerAuth":  {
+                                                                 "id":  "aogww9fvhPvpS3S3",
+                                                                 "name":  "Supabase"
+                                                             }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "={{ JSON.stringify({ success: true, creatomate_render_id: $(\"Start Creatomate Render\").item.json.id, status: \"processing\", message: \"Video render started\" }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "6a314593-ecf7-4431-8418-062a6d964bd2",
+                      "name":  "Respond With Job",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       1344,
+                                       96
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "Video Request Webhook":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Check Data Source",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Check Data Source":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Get Listing",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ],
+                                                               [
+                                                                   {
+                                                                       "node":  "Normalize From Manual",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Get Listing":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Normalize From Listing",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Normalize From Listing":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Start Creatomate Render",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Normalize From Manual":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Start Creatomate Render",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Start Creatomate Render":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Create Render Job",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Create Render Job":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Respond With Job",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "availableInMCP":  true,
+                     "binaryMode":  "separate"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "aiBuilderAssisted":  true,
+                 "builderVariant":  "mcp"
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "2e6f2e72-11b3-4c8b-85f4-a2d780ee48d4",
+    "activeVersionId":  "2e6f2e72-11b3-4c8b-85f4-a2d780ee48d4",
+    "versionCounter":  43,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-06-02T13:52:37.141Z",
+                       "createdAt":  "2026-06-02T13:52:37.141Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "0T0wSqshQOCGV1a9",
+                       "projectId":  "yj9YTxAT7nHTXWyl",
+                       "project":  {
+                                       "updatedAt":  "2026-05-15T11:14:29.546Z",
+                                       "createdAt":  "2026-05-15T10:54:34.594Z",
+                                       "id":  "yj9YTxAT7nHTXWyl",
+                                       "name":  "Katherine Talabis \u003ckrodelas1985@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "creatorId":  "80c03334-8a28-40f1-8a7c-5a53a56956f9"
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-06-12T06:39:27.205Z",
+                          "createdAt":  "2026-06-12T06:39:21.018Z",
+                          "versionId":  "2e6f2e72-11b3-4c8b-85f4-a2d780ee48d4",
+                          "workflowId":  "0T0wSqshQOCGV1a9",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "bamo-video-generate",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "f48b4d94-78a6-4522-912d-64bf440f4998",
+                                            "name":  "Video Request Webhook",
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2.1,
+                                            "position":  [
+                                                             0,
+                                                             96
+                                                         ],
+                                            "webhookId":  "c6d52666-9e08-4f0c-81b9-7212e5471a8f"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "loose",
+                                                                                                  "version":  1
+                                                                                              },
+                                                                                  "combinator":  "and",
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "cond1",
+                                                                                                         "leftValue":  "={{ $json.body.data_source }}",
+                                                                                                         "rightValue":  "listing",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "string",
+                                                                                                                          "operation":  "equals"
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ]
+                                                                              },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "9ce9ca71-27ab-4b95-913e-b052a477bebc",
+                                            "name":  "Check Data Source",
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             224,
+                                                             96
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "url":  "=https://zyfkjxepykwpfzmkxitb.supabase.co/rest/v1/ad_listings?id=eq.{{ $json.body.listing_id }}\u0026select=*",
+                                                               "authentication":  "genericCredentialType",
+                                                               "genericAuthType":  "httpHeaderAuth",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "cf3aa914-dd81-4ae8-b107-280a6f23dc41",
+                                            "name":  "Get Listing",
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.4,
+                                            "position":  [
+                                                             448,
+                                                             0
+                                                         ],
+                                            "credentials":  {
+                                                                "httpBearerAuth":  {
+                                                                                       "id":  "TCsaiCYEhMJwWn6Q",
+                                                                                       "name":  "Bearer Auth account"
+                                                                                   },
+                                                                "httpHeaderAuth":  {
+                                                                                       "id":  "gk4EtMzx3qwlc7fU",
+                                                                                       "name":  "Supabase Service Role"
+                                                                                   }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "a1",
+                                                                                                           "name":  "photo1",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.photo_urls?.[0] ?? $json.primary_photo_url ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a2",
+                                                                                                           "name":  "photo2",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.photo_urls?.[1] ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a3",
+                                                                                                           "name":  "photo3",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.photo_urls?.[2] ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a4",
+                                                                                                           "name":  "photo4",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.photo_urls?.[3] ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a5",
+                                                                                                           "name":  "photo5",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.photo_urls?.[4] ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a6",
+                                                                                                           "name":  "address",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.location ?? $json.city ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a7",
+                                                                                                           "name":  "details1",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.floor_area }} sqm\n{{ $json.bedrooms }} Bedrooms\n{{ $json.bathrooms }} Bathrooms"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a8",
+                                                                                                           "name":  "details2",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "=PHP {{ $json.price }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a9",
+                                                                                                           "name":  "agentName",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.agent_name ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a10",
+                                                                                                           "name":  "agentEmail",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.agent_email ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a11",
+                                                                                                           "name":  "agentPhone",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.agent_phone ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a12",
+                                                                                                           "name":  "brandName",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $(\"Video Request Webhook\").item.json.body.brand_name ?? \"BaMo Realty\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a13",
+                                                                                                           "name":  "agentPhoto",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.agent_photo_url ?? $(\"Video Request Webhook\").item.json.body.agent_photo ?? \"\" }}"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "9a08a106-1e31-427a-88ac-01a3dc0d9a2e",
+                                            "name":  "Normalize From Listing",
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             672,
+                                                             0
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "m1",
+                                                                                                           "name":  "photo1",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.photo1 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m2",
+                                                                                                           "name":  "photo2",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.photo2 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m3",
+                                                                                                           "name":  "photo3",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.photo3 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m4",
+                                                                                                           "name":  "photo4",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.photo4 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m5",
+                                                                                                           "name":  "photo5",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.photo5 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m6",
+                                                                                                           "name":  "address",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.address ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m7",
+                                                                                                           "name":  "details1",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.details1 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m8",
+                                                                                                           "name":  "details2",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.details2 ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m9",
+                                                                                                           "name":  "agentName",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.agentName ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m10",
+                                                                                                           "name":  "agentEmail",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.agentEmail ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m11",
+                                                                                                           "name":  "agentPhone",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.agentPhone ?? \"\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m12",
+                                                                                                           "name":  "brandName",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.brandName ?? \"BaMo Realty\" }}"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "m13",
+                                                                                                           "name":  "agentPhoto",
+                                                                                                           "type":  "string",
+                                                                                                           "value":  "={{ $json.body.manual_data.agentPhoto ?? \"\" }}"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "4c14f4ae-1360-4bb9-b43b-e088eb353d4c",
+                                            "name":  "Normalize From Manual",
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             672,
+                                                             192
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://api.creatomate.com/v2/renders",
+                                                               "authentication":  "genericCredentialType",
+                                                               "genericAuthType":  "httpBearerAuth",
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={{ JSON.stringify({ template_id: $(\"Video Request Webhook\").item.json.body.template_id, modifications: { \"Photo-1.source\": $json.photo1, \"Photo-2.source\": $json.photo2, \"Photo-3.source\": $json.photo3, \"Photo-4.source\": $json.photo4, \"Photo-5.source\": $json.photo5, \"Address.text\": $json.address, \"Details-1.text\": $json.details1, \"Details-2.text\": $json.details2, \"Picture.source\": $json.agentPhoto, \"Name.text\": $json.agentName, \"Email.text\": $json.agentEmail, \"Phone-Number.text\": $json.agentPhone, \"Brand-Name.text\": $json.brandName, ...($(\"Video Request Webhook\").item.json.body.music_url ? { \"Music.source\": $(\"Video Request Webhook\").item.json.body.music_url } : {}) }, webhook_url: \"https://n8n-bahaymo.onrender.com/webhook/bamo-video-complete\" }) }}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "4db2980b-7017-462a-bb81-52f932acce1c",
+                                            "name":  "Start Creatomate Render",
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.4,
+                                            "position":  [
+                                                             896,
+                                                             96
+                                                         ],
+                                            "credentials":  {
+                                                                "httpBearerAuth":  {
+                                                                                       "id":  "NEJcstQDnq3HPGLK",
+                                                                                       "name":  "Createomate"
+                                                                                   },
+                                                                "httpHeaderAuth":  {
+                                                                                       "id":  "XU2cLPNQEj6KGmol",
+                                                                                       "name":  "Creatomate API Key"
+                                                                                   }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://zyfkjxepykwpfzmkxitb.supabase.co/rest/v1/creative_jobs",
+                                                               "authentication":  "genericCredentialType",
+                                                               "genericAuthType":  "httpBearerAuth",
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/json"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Prefer",
+                                                                                                               "value":  "return=representation"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "apikey",
+                                                                                                               "value":  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5ZmtqeGVweWt3cGZ6bWt4aXRiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDc3NTY1MSwiZXhwIjoyMDkwMzUxNjUxfQ.wYDdUp6IQrLwG01HNYHJ_u0XoaVAB-58TaHBNoBbxSs"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={{ JSON.stringify({ client_id: $(\"Video Request Webhook\").item.json.body.client_id, creative_id: null, job_id: $json.id, job_type: \"creatomate_video\", request_payload: { template_id: $(\"Video Request Webhook\").item.json.body.template_id, prompt_id: $(\"Video Request Webhook\").item.json.body.prompt_id }, status: \"processing\" }) }}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "44d9a49f-c658-48f3-9888-7e840e100525",
+                                            "name":  "Create Render Job",
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.4,
+                                            "position":  [
+                                                             1120,
+                                                             96
+                                                         ],
+                                            "credentials":  {
+                                                                "httpHeaderAuth":  {
+                                                                                       "id":  "gk4EtMzx3qwlc7fU",
+                                                                                       "name":  "Supabase Service Role"
+                                                                                   },
+                                                                "httpBearerAuth":  {
+                                                                                       "id":  "aogww9fvhPvpS3S3",
+                                                                                       "name":  "Supabase"
+                                                                                   }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "respondWith":  "json",
+                                                               "responseBody":  "={{ JSON.stringify({ success: true, creatomate_render_id: $(\"Start Creatomate Render\").item.json.id, status: \"processing\", message: \"Video render started\" }) }}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "6a314593-ecf7-4431-8418-062a6d964bd2",
+                                            "name":  "Respond With Job",
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.5,
+                                            "position":  [
+                                                             1344,
+                                                             96
+                                                         ]
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Video Request Webhook":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Check Data Source",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                                              "Check Data Source":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "Get Listing",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ],
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "Normalize From Manual",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    },
+                                              "Get Listing":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Normalize From Listing",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                                              "Normalize From Listing":  {
+                                                                             "main":  [
+                                                                                          [
+                                                                                              {
+                                                                                                  "node":  "Start Creatomate Render",
+                                                                                                  "type":  "main",
+                                                                                                  "index":  0
+                                                                                              }
+                                                                                          ]
+                                                                                      ]
+                                                                         },
+                                              "Normalize From Manual":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Start Creatomate Render",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                                              "Start Creatomate Render":  {
+                                                                              "main":  [
+                                                                                           [
+                                                                                               {
+                                                                                                   "node":  "Create Render Job",
+                                                                                                   "type":  "main",
+                                                                                                   "index":  0
+                                                                                               }
+                                                                                           ]
+                                                                                       ]
+                                                                          },
+                                              "Create Render Job":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "Respond With Job",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    }
+                                          },
+                          "authors":  "Katherine Talabis",
+                          "name":  "Version 2e6f2e72",
+                          "description":  "",
+                          "autosaved":  true,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-06-12T06:39:27.198Z",
+                                                             "id":  598,
+                                                             "workflowId":  "0T0wSqshQOCGV1a9",
+                                                             "versionId":  "2e6f2e72-11b3-4c8b-85f4-a2d780ee48d4",
+                                                             "event":  "activated",
+                                                             "userId":  "80c03334-8a28-40f1-8a7c-5a53a56956f9"
+                                                         }
+                                                     ]
+                      }
+}
