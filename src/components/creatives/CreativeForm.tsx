@@ -1,5 +1,5 @@
 'use client'
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import {
@@ -8,8 +8,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 
-const CREATOMATE_WEBHOOK  = 'https://n8n-bahaymo.onrender.com/webhook/bamo-video-generate'
-const CREATOMATE_TEMPLATE = '7752bc3f-fde2-4592-b521-101c1bfd69cd'
+const GENERATE_ENDPOINT = '/api/creatives/generate'
 const POLL_INTERVAL_MS    = 3000
 const MAX_POLL_ATTEMPTS   = 40
 
@@ -42,8 +41,20 @@ interface Asset {
   thumbnail_url: string | null
 }
 
+interface Template {
+  id: string
+  client_id: string | null
+  name: string
+  template_id: string
+  thumbnail_url: string | null
+  is_default: boolean | null
+}
+
 interface CreativeFormProps {
-  clientId: string
+  clientId: string | null
+  clientName: string | null
+  clients?: { id: string; name: string }[]
+  templates: Template[]
   listings: any[]
   contents: any[]
   assets: Asset[]
@@ -54,16 +65,20 @@ interface CreativeResult { url: string; thumb?: string; id?: string }
 
 type DataSource = 'listing' | 'assets'
 
-export default function CreativeForm({ clientId, listings, contents, assets, defaultContentId }: CreativeFormProps) {
+export default function CreativeForm({ clientId, clientName, clients = [], templates, listings, contents, assets, defaultContentId }: CreativeFormProps) {
   const router   = useRouter()
   const supabase = createClient()
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [activeClientId, setActiveClientId] = useState<string | null>(clientId ?? clients[0]?.id ?? null)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
+    templates.find(t => t.is_default)?.template_id ?? templates[0]?.template_id ?? ''
+  )
   const [creativeType,   setCreativeType]   = useState('image')
   const [source,         setSource]         = useState('canva')
   const [format,         setFormat]         = useState('Square 1:1')
   const [dataSource,     setDataSource]     = useState<DataSource>('listing')
-  const [listingId,      setListingId]      = useState(listings[0]?.id ?? '')
+  const [listingId,      setListingId]      = useState('')
   const [contentId,      setContentId]      = useState(defaultContentId ?? '')
   const [prompt,         setPrompt]         = useState('')
 
@@ -84,9 +99,22 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
   const [saving,         setSaving]         = useState(false)
   const [error,          setError]          = useState<string | null>(null)
 
+  const isAdmin = clients.length > 0
+  const activeClientName = isAdmin
+    ? (clients.find(c => c.id === activeClientId)?.name ?? 'BaMo Realty')
+    : (clientName ?? 'BaMo Realty')
+  const visibleTemplates = templates.filter(t => t.client_id === null || t.client_id === activeClientId)
+  const scopedListings = isAdmin ? listings.filter((l: any) => l.client_id === activeClientId) : listings
+  const scopedAssets = isAdmin ? assets.filter((a: any) => (a as any).client_id === activeClientId) : assets
+
   const isCreatomateVideo = source === 'creatomate' && creativeType === 'video'
-  const selectedListing   = listings.find(l => l.id === listingId)
-  const imageAssets       = assets.filter(a => a.file_type === 'image')
+  const selectedListing   = scopedListings.find((l: any) => l.id === listingId)
+  const imageAssets       = scopedAssets.filter((a: any) => a.file_type === 'image')
+
+  useEffect(() => {
+    setListingId(scopedListings[0]?.id ?? '')
+    setSelectedPhotos({ photo1: '', photo2: '', photo3: '', photo4: '', photo5: '', agentPhoto: '' })
+  }, [activeClientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function pickPhoto(key: PhotoKey, url: string) {
     setSelectedPhotos((prev: Record<PhotoKey, string>) => ({ ...prev, [key]: url }))
@@ -142,11 +170,14 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
       if (isCreatomateVideo) {
         setGeneratingStep('Sending to Creatomate...')
 
+        if (!activeClientId) throw new Error('Select a client first.')
+        if (!selectedTemplateId) throw new Error('Select a template first.')
+
         const payload: Record<string, any> = {
-          client_id:   clientId,
-          template_id: CREATOMATE_TEMPLATE,
+          client_id:   activeClientId,
+          template_id: selectedTemplateId,
           prompt_id:   null,
-          brand_name:  'BaMo Realty',
+          brand_name:  activeClientName,
         }
 
         if (dataSource === 'listing' && listingId) {
@@ -167,11 +198,11 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
             agentName:  manualInfo.agentName,
             agentEmail: manualInfo.agentEmail,
             agentPhone: manualInfo.agentPhone,
-            brandName:  'BaMo Realty',
+            brandName:  activeClientName,
           }
         }
 
-        const res = await fetch(CREATOMATE_WEBHOOK, {
+        const res = await fetch(GENERATE_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -215,7 +246,7 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
         return
       }
       await supabase.from('creatives').insert({
-        client_id: clientId, creative_type: creativeType, generation_method: source,
+        client_id: activeClientId, creative_type: creativeType, generation_method: source,
         asset_url: creativeResult?.url ?? '/placeholder-creative.jpg',
         thumbnail_url: creativeResult?.thumb ?? null, job_status: 'completed',
       })
@@ -249,6 +280,25 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
         </div>
 
         <div className="p-4 flex flex-col gap-4">
+
+          {/* Client selector — baymo_admin only */}
+          {isAdmin && (
+            <div>
+              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Client</label>
+              <div className="flex items-center gap-3 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
+                <select
+                  className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
+                  value={activeClientId ?? ''}
+                  onChange={e => setActiveClientId(e.target.value || null)}
+                >
+                  <option value="">Select a client…</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Creative type */}
           <div>
@@ -288,6 +338,46 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
             </div>
           </div>
 
+          {/* ── Creatomate-specific: template ── */}
+          {isCreatomateVideo && (
+            <div>
+              <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Template</label>
+              {visibleTemplates.length === 0 ? (
+                <div className="bg-[#F4F5F7] rounded-lg px-3 py-3 text-xs text-gray-400 text-center">
+                  No video templates registered yet.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {visibleTemplates.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTemplateId(t.template_id)}
+                      className={`rounded-lg border text-left overflow-hidden transition-colors ${
+                        selectedTemplateId === t.template_id ? 'border-[#E8660A] bg-[#FDE8D8]' : 'border-black/10 hover:bg-gray-50'
+                      }`}
+                    >
+                      {t.thumbnail_url ? (
+                        <img src={t.thumbnail_url} alt={t.name} className="w-full h-20 object-cover" />
+                      ) : (
+                        <div className="w-full h-20 bg-[#1A2E5A] flex items-center justify-center text-white">
+                          <Video size={18} />
+                        </div>
+                      )}
+                      <div className="px-2.5 py-1.5">
+                        <div className={`text-[11px] font-semibold truncate ${selectedTemplateId === t.template_id ? 'text-[#E8660A]' : 'text-[#1A2E5A]'}`}>
+                          {t.name}
+                        </div>
+                        <div className="text-[9px] text-gray-400">
+                          {t.client_id === null ? 'Global' : 'Client-exclusive'}{t.is_default ? ' · Default' : ''}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Creatomate-specific: data source ── */}
           {isCreatomateVideo && (
             <div>
@@ -308,12 +398,12 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
               </div>
 
               {/* From Listing */}
-              {dataSource === 'listing' && listings.length > 0 && (
+              {dataSource === 'listing' && scopedListings.length > 0 && (
                 <div className="flex items-center gap-2 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
                   <Building size={15} className="text-[#1A2E5A] flex-shrink-0" />
                   <select className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
                     value={listingId} onChange={e => setListingId(e.target.value)}>
-                    {listings.map(l => (
+                    {scopedListings.map((l: any) => (
                       <option key={l.id} value={l.id}>
                         {l.property_name ?? 'Unnamed'}{l.price ? ` — ₱${Number(l.price).toLocaleString()}` : ''}{l.city ? ` · ${l.city}` : ''}
                       </option>
@@ -439,14 +529,14 @@ export default function CreativeForm({ clientId, listings, contents, assets, def
           )}
 
           {/* Non-Creatomate: listing dropdown */}
-          {!isCreatomateVideo && listings.length > 0 && (
+          {!isCreatomateVideo && scopedListings.length > 0 && (
             <div>
               <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Listing</label>
               <div className="flex items-center gap-2 bg-[#F4F5F7] rounded-lg px-3 py-2.5">
                 <Building size={15} className="text-[#1A2E5A] flex-shrink-0" />
                 <select className="flex-1 bg-transparent text-sm text-[#1A2E5A] outline-none"
                   value={listingId} onChange={e => setListingId(e.target.value)}>
-                  {listings.map(l => (
+                  {scopedListings.map((l: any) => (
                     <option key={l.id} value={l.id}>
                       {l.property_name ?? 'Unnamed'}{l.price ? ` — ₱${Number(l.price).toLocaleString()}` : ''}{l.city ? ` · ${l.city}` : ''}
                     </option>
