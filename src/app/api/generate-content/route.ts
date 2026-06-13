@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-
-const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY ?? '').replace(/[^\x21-\x7E]/g, '')
+import { generateText } from '@/lib/ai-provider'
 
 export async function POST(request: NextRequest) {
   try {
     // Auth gate — this route was previously open to the internet,
-    // letting anyone burn the Anthropic API key.
+    // letting anyone burn the AI API key.
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -21,33 +20,16 @@ export async function POST(request: NextRequest) {
 
     const { prompt } = await request.json()
     if (!prompt) return NextResponse.json({ error: 'No prompt' }, { status: 400 })
-    if (!ANTHROPIC_KEY) {
-      return NextResponse.json({ error: 'ANTHROPIC_API_KEY is missing or contains invalid characters - fix it in Vercel env vars' }, { status: 500 })
+
+    let text: string
+    try {
+      text = await generateText({ prompt, maxTokens: 1000 })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'AI generation failed'
+      return NextResponse.json({ error: msg }, { status: 500 })
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    if (!response.ok) {
-      const err = await response.text()
-      return NextResponse.json({ error: err }, { status: response.status })
-    }
-
-    const data = await response.json()
-    const text = data.content?.[0]?.text ?? ''
-
-    // Parse JSON from response
+    // Parse JSON from response (fence-strip kept for Anthropic fallback)
     const clean = text.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(clean)
     return NextResponse.json(parsed)

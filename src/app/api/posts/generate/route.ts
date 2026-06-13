@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { generateText } from '@/lib/ai-provider'
 
 export const maxDuration = 60
-
-const ANTHROPIC_KEY = (process.env.ANTHROPIC_API_KEY ?? '').replace(/[^\x21-\x7E]/g, '')
 
 const GOALS: Record<string, string> = {
   new_listing: 'Announce a property that just hit the market. Create excitement and urgency to inquire or book a viewing.',
@@ -27,7 +26,7 @@ const TONES: Record<string, string> = {
 /**
  * POST /api/posts/generate
  * Body: { client_id, goal, tone, platform?, post_type?, listing_id?, instructions? }
- * Builds the prompt server-side, calls Claude, saves the result to
+ * Builds the prompt server-side, calls the AI provider, saves the result to
  * ad_content (so it appears in "Pull from Content" and stays traceable),
  * and returns the generated fields for the composer.
  */
@@ -131,29 +130,14 @@ RULES:
 Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
 {"title": "short internal label for this content", "hook": "first line that stops the scroll", "caption": "the full post caption including the hook as its first line", "hashtags": ["#tag1", "#tag2"], "cta": "the closing call to action used"}`
 
-  // Call Claude
-  if (!ANTHROPIC_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is missing or contains invalid characters - fix it in Vercel env vars' }, { status: 500 })
+  // Call AI provider
+  let text: string
+  try {
+    text = await generateText({ prompt, maxTokens: 1000 })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'AI generation failed'
+    return NextResponse.json({ error: `AI generation failed: ${msg.slice(0, 200)}` }, { status: 502 })
   }
-  const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
-  if (!aiRes.ok) {
-    const err = await aiRes.text()
-    return NextResponse.json({ error: `AI generation failed: ${err.slice(0, 200)}` }, { status: 502 })
-  }
-  const aiJson = await aiRes.json()
-  const text: string = aiJson.content?.[0]?.text ?? ''
 
   let parsed: { title?: string; hook?: string; caption?: string; hashtags?: string[]; cta?: string }
   try {
