@@ -137,7 +137,7 @@ export default function PostsClient({
 
   // Compose-with-AI state
   const [aiOpen, setAiOpen] = useState(false)
-  const [aiGoal, setAiGoal] = useState('new_listing')
+  const [aiGoal, setAiGoal] = useState('listing_promotion')
   const [aiTone, setAiTone] = useState('friendly')
   const [aiLanguage, setAiLanguage] = useState<'english' | 'taglish' | 'tagalog'>('english')
   const [aiListingId, setAiListingId] = useState('')
@@ -552,13 +552,14 @@ export default function PostsClient({
                 <div>
                   <label className="text-[10px] font-medium text-[#1A2E5A] mb-1 block">Goal</label>
                   <select className="bamo-input text-xs" value={aiGoal} onChange={e => setAiGoal(e.target.value)}>
-                    <option value="new_listing">New listing announcement</option>
-                    <option value="open_house">Open house / tripping invite</option>
-                    <option value="price_drop">Price drop</option>
-                    <option value="lead_generation">Lead generation</option>
-                    <option value="brand_authority">Brand authority / tips</option>
-                    <option value="market_update">Market update</option>
-                    <option value="greeting">Holiday / greeting</option>
+                    <option value="listing_promotion">Listing Promotion</option>
+                    <option value="open_house">Open House</option>
+                    <option value="tripping_invite">Tripping Invite</option>
+                    <option value="event_promotion">Event Promotion</option>
+                    <option value="brand_awareness">Brand Awareness</option>
+                    <option value="lead_magnet">Lead Magnet</option>
+                    <option value="social_proof">Testimonial / Social Proof</option>
+                    <option value="lifestyle">Lifestyle / Engagement</option>
                   </select>
                 </div>
                 <div>

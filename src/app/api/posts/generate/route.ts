@@ -6,13 +6,14 @@ import { generateText } from '@/lib/ai-provider'
 export const maxDuration = 60
 
 const GOALS: Record<string, string> = {
-  new_listing: 'Announce a property that just hit the market. Create excitement and urgency to inquire or book a viewing.',
-  open_house: 'Invite people to an open house / tripping. Emphasize the date, ease of visiting, and what they will see.',
-  price_drop: 'Announce a price improvement. Emphasize the new value and that serious buyers should move quickly.',
-  lead_generation: 'Generate inquiries. End with a clear, low-friction call to action (message us, comment, send a DM).',
-  brand_authority: 'Position the agent/brokerage as a trusted local expert. Educational or insight-driven, soft sell only.',
-  market_update: 'Share a brief, useful real estate market insight relevant to Filipino buyers and sellers. Build trust.',
-  greeting: 'A warm holiday or occasion greeting from the brand. No selling. Keep it short and sincere.',
+  listing_promotion: 'Drive interest in this specific property. Highlight 2-3 standout features. End with a clear CTA to inquire or view.',
+  open_house: 'Invite the reader to a specific open house. Include date/time placeholder if not provided. CTA is to RSVP or attend.',
+  tripping_invite: 'Invite the reader to a site visit (tripping). Emphasize seeing the property in person. CTA is to book a tripping schedule.',
+  event_promotion: 'Promote an event (seminar, launch, expo). Focus on what attendees gain. CTA is to register or attend.',
+  brand_awareness: 'No direct sales ask. Build top-of-mind recognition for the agent/brand. Share value or perspective.',
+  lead_magnet: 'Offer a free resource (guide, computation, checklist). CTA is to message/comment to receive it.',
+  social_proof: 'Build trust through testimonial or success story framing. CTA is soft — invite the reader to imagine themselves in the same outcome.',
+  lifestyle: 'Community-building or relatable content. No sales ask. Encourage comments and engagement.',
 }
 
 const TONES: Record<string, string> = {
@@ -77,7 +78,10 @@ async function handle(request: NextRequest) {
   const clientId = profile.role === 'client_admin' ? profile.client_id : body.client_id
   if (!clientId) return NextResponse.json({ error: 'client_id is required' }, { status: 400 })
 
-  const goal = body.goal && GOALS[body.goal] ? body.goal : 'lead_generation'
+  if (!body.goal || !GOALS[body.goal]) {
+    return NextResponse.json({ error: `goal is required. Valid values: ${Object.keys(GOALS).join(', ')}` }, { status: 400 })
+  }
+  const goal = body.goal
   const tone = body.tone && TONES[body.tone] ? body.tone : 'friendly'
   const platform = body.platform === 'instagram' ? 'instagram' : 'facebook'
   const langInstruction = LANGUAGE_INSTRUCTIONS[body.language as string] ?? LANGUAGE_INSTRUCTIONS.english

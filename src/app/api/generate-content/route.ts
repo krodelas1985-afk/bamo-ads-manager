@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from '@/lib/ai-provider'
 
+const GOALS: Record<string, string> = {
+  listing_promotion: 'Drive interest in this specific property. Highlight 2-3 standout features. End with a clear CTA to inquire or view.',
+  open_house: 'Invite the reader to a specific open house. Include date/time placeholder if not provided. CTA is to RSVP or attend.',
+  tripping_invite: 'Invite the reader to a site visit (tripping). Emphasize seeing the property in person. CTA is to book a tripping schedule.',
+  event_promotion: 'Promote an event (seminar, launch, expo). Focus on what attendees gain. CTA is to register or attend.',
+  brand_awareness: 'No direct sales ask. Build top-of-mind recognition for the agent/brand. Share value or perspective.',
+  lead_magnet: 'Offer a free resource (guide, computation, checklist). CTA is to message/comment to receive it.',
+  social_proof: 'Build trust through testimonial or success story framing. CTA is soft — invite the reader to imagine themselves in the same outcome.',
+  lifestyle: 'Community-building or relatable content. No sales ask. Encourage comments and engagement.',
+}
+
 const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
   english: 'Write in natural, professional English suited to Philippine real estate marketing.',
   taglish: 'Write in conversational Taglish — natural code-switching between Filipino and English the way real estate agents actually post on Facebook in the Philippines. Not forced or mechanical alternation sentence-by-sentence.',
@@ -24,11 +35,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { prompt, language } = await request.json()
+    const { prompt, language, goal } = await request.json()
     if (!prompt) return NextResponse.json({ error: 'No prompt' }, { status: 400 })
+    if (!goal || !GOALS[goal as string]) {
+      return NextResponse.json({ error: `goal is required. Valid values: ${Object.keys(GOALS).join(', ')}` }, { status: 400 })
+    }
 
     const langInstruction = LANGUAGE_INSTRUCTIONS[language as string] ?? LANGUAGE_INSTRUCTIONS.english
-    const fullPrompt = `${prompt}\n\nLANGUAGE: ${langInstruction}`
+    const fullPrompt = `${prompt}\n\nGOAL: ${GOALS[goal as string]}\n\nLANGUAGE: ${langInstruction}`
 
     let text: string
     try {

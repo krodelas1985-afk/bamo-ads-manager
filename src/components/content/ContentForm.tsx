@@ -38,6 +38,7 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
   const [platform, setPlatform] = useState('facebook')
   const [tone, setTone] = useState('professional')
   const [language, setLanguage] = useState<'english' | 'taglish' | 'tagalog'>('english')
+  const [goal, setGoal] = useState('listing_promotion')
   const [audience, setAudience] = useState('')
   const [topic, setTopic] = useState('')
   const [selectedListing, setSelectedListing] = useState<Listing | null>(listings[0] ?? null)
@@ -73,7 +74,7 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
       const response = await fetch('/api/generate-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, language }),
+        body: JSON.stringify({ prompt, language, goal }),
       })
 
       if (!response.ok) throw new Error('Generation failed')
@@ -403,6 +404,25 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
               value={topic}
               onChange={e => setTopic(e.target.value)}
             />
+          </div>
+
+          {/* Goal */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Goal</label>
+            <select
+              className="bamo-input text-sm"
+              value={goal}
+              onChange={e => setGoal(e.target.value)}
+            >
+              <option value="listing_promotion">Listing Promotion</option>
+              <option value="open_house">Open House</option>
+              <option value="tripping_invite">Tripping Invite</option>
+              <option value="event_promotion">Event Promotion</option>
+              <option value="brand_awareness">Brand Awareness</option>
+              <option value="lead_magnet">Lead Magnet</option>
+              <option value="social_proof">Testimonial / Social Proof</option>
+              <option value="lifestyle">Lifestyle / Engagement</option>
+            </select>
           </div>
 
           <button
