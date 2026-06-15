@@ -2,18 +2,43 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { generateText } from '@/lib/ai-provider'
+import { fetchUrlContent, URL_WARNING_MESSAGES } from '@/lib/fetch-url-content'
 
 export const maxDuration = 60
 
-const GOALS: Record<string, string> = {
-  listing_promotion: 'Drive interest in this specific property. Highlight 2-3 standout features. End with a clear CTA to inquire or view.',
-  open_house: 'Invite the reader to a specific open house. Include date/time placeholder if not provided. CTA is to RSVP or attend.',
-  tripping_invite: 'Invite the reader to a site visit (tripping). Emphasize seeing the property in person. CTA is to book a tripping schedule.',
-  event_promotion: 'Promote an event (seminar, launch, expo). Focus on what attendees gain. CTA is to register or attend.',
-  brand_awareness: 'No direct sales ask. Build top-of-mind recognition for the agent/brand. Share value or perspective.',
-  lead_magnet: 'Offer a free resource (guide, computation, checklist). CTA is to message/comment to receive it.',
-  social_proof: 'Build trust through testimonial or success story framing. CTA is soft — invite the reader to imagine themselves in the same outcome.',
-  lifestyle: 'Community-building or relatable content. No sales ask. Encourage comments and engagement.',
+const GOALS: Record<string, { instruction: string; adjectives: string }> = {
+  listing_promotion: {
+    instruction: 'Drive interest in this specific property. Highlight 2-3 standout features. End with a clear CTA to inquire or view.',
+    adjectives: 'aspirational, polished, confident, evocative',
+  },
+  open_house: {
+    instruction: 'Invite the reader to a specific open house. Include date/time placeholder if not provided. CTA is to RSVP or attend.',
+    adjectives: 'urgent, welcoming, time-sensitive, inviting',
+  },
+  tripping_invite: {
+    instruction: 'Invite the reader to a site visit (tripping). Emphasize seeing the property in person. CTA is to book a tripping schedule.',
+    adjectives: 'experiential, sensory, persuasive, action-oriented',
+  },
+  event_promotion: {
+    instruction: 'Promote an event (seminar, launch, expo). Focus on what attendees gain. CTA is to register or attend.',
+    adjectives: 'energetic, professional, anticipation-building',
+  },
+  brand_awareness: {
+    instruction: 'No direct sales ask. Build top-of-mind recognition for the agent/brand. Share value or perspective.',
+    adjectives: 'thoughtful, authoritative, value-driven',
+  },
+  lead_magnet: {
+    instruction: 'Offer a free resource (guide, computation, checklist). CTA is to message/comment to receive it.',
+    adjectives: 'helpful, generous, no-pressure, useful',
+  },
+  social_proof: {
+    instruction: 'Build trust through testimonial or success story framing. CTA is soft — invite the reader to imagine themselves in the same outcome.',
+    adjectives: 'credible, warm, story-driven, relatable',
+  },
+  lifestyle: {
+    instruction: 'Community-building or relatable content. No sales ask. Encourage comments and engagement.',
+    adjectives: 'warm, relatable, conversational, human',
+  },
 }
 
 const TONES: Record<string, string> = {
@@ -31,7 +56,7 @@ const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
 
 /**
  * POST /api/posts/generate
- * Body: { client_id, goal, tone, platform?, post_type?, listing_id?, instructions?, language? }
+ * Body: { client_id, goal, tone, platform?, post_type?, listing_id?, instructions?, language?, referenceUrl? }
  * Builds the prompt server-side, calls the AI provider, saves the result to
  * ad_content (so it appears in "Pull from Content" and stays traceable),
  * and returns the generated fields for the composer.
@@ -68,6 +93,7 @@ async function handle(request: NextRequest) {
     listing_id?: string | null
     instructions?: string | null
     language?: string
+    referenceUrl?: string | null
   }
   try {
     body = await request.json()
@@ -82,6 +108,7 @@ async function handle(request: NextRequest) {
     return NextResponse.json({ error: `goal is required. Valid values: ${Object.keys(GOALS).join(', ')}` }, { status: 400 })
   }
   const goal = body.goal
+  const goalEntry = GOALS[goal]
   const tone = body.tone && TONES[body.tone] ? body.tone : 'friendly'
   const platform = body.platform === 'instagram' ? 'instagram' : 'facebook'
   const langInstruction = LANGUAGE_INSTRUCTIONS[body.language as string] ?? LANGUAGE_INSTRUCTIONS.english
@@ -111,6 +138,18 @@ async function handle(request: NextRequest) {
     listing = data
   }
 
+  // URL reference — fetch if provided, never blocks generation on failure
+  let referenceBlock = ''
+  let warning: string | undefined
+  if (body.referenceUrl && body.referenceUrl.trim()) {
+    const result = await fetchUrlContent(body.referenceUrl.trim())
+    if (result.ok) {
+      referenceBlock = `\nREFERENCE SOURCE (facts only — do not invent details not present here, do not contradict these facts):\n${result.text}`
+    } else {
+      warning = URL_WARNING_MESSAGES[result.reason]
+    }
+  }
+
   const listingBlock = listing
     ? `
 PROPERTY DETAILS (use the real numbers, do not invent any):
@@ -125,12 +164,14 @@ PROPERTY DETAILS (use the real numbers, do not invent any):
     : 'No specific property attached — write at the brand level.'
 
   const prompt = `You are the social media copywriter for "${client.name}"${client.company_name ? ` (${client.company_name})` : ''}, a Philippine real estate brand. Write one organic ${platform} post.
+${body.instructions?.trim() ? `\nADDITIONAL INSTRUCTIONS FROM THE CLIENT: ${body.instructions.trim()}` : ''}
+${listingBlock}
 
-GOAL: ${GOALS[goal]}
+GOAL: ${goalEntry.instruction}
+STYLE: Use language that feels ${goalEntry.adjectives}. The factual content comes from the reference and the focus/audience inputs — these adjectives describe the register, not new facts.
 TONE: ${TONES[tone]}
 LANGUAGE: ${langInstruction}
-${listingBlock}
-${body.instructions?.trim() ? `ADDITIONAL INSTRUCTIONS FROM THE CLIENT: ${body.instructions.trim()}` : ''}
+${referenceBlock}
 
 RULES:
 - Philippine market context: prices in PHP, local geography, Pag-IBIG/bank financing references only if relevant.
@@ -193,5 +234,6 @@ Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
     cta: parsed.cta ?? null,
     suggested_link: listing?.listing_url ?? null,
     suggested_media: listing?.primary_photo_url ?? null,
+    ...(warning ? { warning } : {}),
   })
 }

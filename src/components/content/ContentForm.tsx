@@ -45,6 +45,8 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
   const [listingSource, setListingSource] = useState<ListingSource>('local')
   const [marketplaceListing, setMarketplaceListing] = useState<MarketplaceListing | null>(null)
   const [showMarketplacePicker, setShowMarketplacePicker] = useState(false)
+  const [referenceUrl, setReferenceUrl] = useState('')
+  const [urlWarning, setUrlWarning] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [generated, setGenerated] = useState<{
@@ -68,17 +70,19 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
 
   async function handleGenerate() {
     setGenerating(true)
+    setUrlWarning(null)
     try {
       const prompt = `You are a real estate marketing expert for the Philippine market.\nGenerate social media content for a ${platform} post.\n\nProperty: ${activeListing?.property_name ?? 'Property'} in ${activeListing?.city ?? 'Philippines'}\nPrice: ₱${activeListing?.price?.toLocaleString() ?? 'Contact for price'}\nType: ${activeListing?.property_type ?? 'Property'}\nTone: ${tone}\nTarget audience: ${audience || 'Filipino homebuyers and investors'}\nFocus: ${topic || 'Highlight key property features and call to action'}\n\nReturn ONLY a JSON object with exactly these keys:\n{\n  "hook": "attention-grabbing opening line in Filipino/English mix",\n  "caption": "full post caption 3-4 paragraphs with emojis, key features and benefits",\n  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5", "hashtag6"],\n  "cta": "short call to action text"\n}\nNo markdown, no explanation, just the JSON.`
 
       const response = await fetch('/api/generate-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, language, goal }),
+        body: JSON.stringify({ prompt, language, goal, referenceUrl: referenceUrl.trim() || undefined }),
       })
 
       if (!response.ok) throw new Error('Generation failed')
       const data = await response.json()
+      if (data.warning) setUrlWarning(data.warning)
       setGenerated(data)
       setEditCaption(data.caption)
       setEditHook(data.hook)
@@ -425,6 +429,23 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
             </select>
           </div>
 
+          {/* Reference URL */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">
+              Reference URL <span className="text-gray-400 font-normal">optional</span>
+            </label>
+            <input
+              className="bamo-input text-sm"
+              type="url"
+              placeholder="https://..."
+              value={referenceUrl}
+              onChange={e => setReferenceUrl(e.target.value)}
+            />
+            <p className="text-[10px] text-gray-400 mt-1 leading-snug">
+              Paste a webpage URL for the AI to reference. Source-of-truth: AI will only use facts from the page. Some sites (esp. modern listing portals) may fail to load — you'll see a warning if so.
+            </p>
+          </div>
+
           <button
             onClick={handleGenerate}
             disabled={generating}
@@ -456,6 +477,15 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+
+            {urlWarning && (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5 flex items-start gap-2">
+                <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠️</span>
+                <p className="text-xs text-amber-800 leading-snug">
+                  <span className="font-semibold">Reference URL warning:</span> {urlWarning}
+                </p>
+              </div>
+            )}
 
             <div className="flex gap-1.5">
               {PLATFORMS.map(p => (

@@ -142,6 +142,8 @@ export default function PostsClient({
   const [aiLanguage, setAiLanguage] = useState<'english' | 'taglish' | 'tagalog'>('english')
   const [aiListingId, setAiListingId] = useState('')
   const [aiInstructions, setAiInstructions] = useState('')
+  const [aiReferenceUrl, setAiReferenceUrl] = useState('')
+  const [aiUrlWarning, setAiUrlWarning] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
 
   // Per-client filtered options
@@ -261,6 +263,7 @@ export default function PostsClient({
     if (isAdmin && !selectedClientId) { setNotice('Select a client first'); return }
     setGenerating(true)
     setNotice(null)
+    setAiUrlWarning(null)
     try {
       const res = await fetch('/api/posts/generate', {
         method: 'POST',
@@ -274,10 +277,12 @@ export default function PostsClient({
           post_type: postType,
           listing_id: aiListingId || null,
           instructions: aiInstructions || null,
+          referenceUrl: aiReferenceUrl.trim() || undefined,
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Generation failed')
+      if (json.warning) setAiUrlWarning(json.warning)
       setCaption(json.caption ?? '')
       setHashtags((json.hashtags ?? []).join(' '))
       if (json.suggested_link && !linkUrl) setLinkUrl(json.suggested_link)
@@ -620,6 +625,18 @@ export default function PostsClient({
                   value={aiInstructions}
                   onChange={e => setAiInstructions(e.target.value)}
                 />
+                <div>
+                  <input
+                    className="bamo-input text-xs"
+                    type="url"
+                    placeholder="Reference URL (optional) — https://..."
+                    value={aiReferenceUrl}
+                    onChange={e => setAiReferenceUrl(e.target.value)}
+                  />
+                  <p className="text-[9px] text-gray-400 mt-0.5 leading-snug">
+                    Paste a webpage URL for the AI to reference. Source-of-truth: AI will only use facts from the page. Some sites (esp. modern listing portals) may fail to load — you'll see a warning if so.
+                  </p>
+                </div>
                 <button
                   onClick={generateWithAI}
                   disabled={generating}
@@ -630,6 +647,15 @@ export default function PostsClient({
               </div>
             )}
           </div>
+
+          {aiUrlWarning && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 flex items-start gap-2">
+              <span className="text-amber-500 flex-shrink-0">⚠️</span>
+              <p className="text-[10px] text-amber-800 leading-snug">
+                <span className="font-semibold">Reference URL warning:</span> {aiUrlWarning}
+              </p>
+            </div>
+          )}
 
           {/* Caption */}
           <div>

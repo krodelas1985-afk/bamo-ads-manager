@@ -1,16 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from '@/lib/ai-provider'
+import { fetchUrlContent, URL_WARNING_MESSAGES } from '@/lib/fetch-url-content'
 
-const GOALS: Record<string, string> = {
-  listing_promotion: 'Drive interest in this specific property. Highlight 2-3 standout features. End with a clear CTA to inquire or view.',
-  open_house: 'Invite the reader to a specific open house. Include date/time placeholder if not provided. CTA is to RSVP or attend.',
-  tripping_invite: 'Invite the reader to a site visit (tripping). Emphasize seeing the property in person. CTA is to book a tripping schedule.',
-  event_promotion: 'Promote an event (seminar, launch, expo). Focus on what attendees gain. CTA is to register or attend.',
-  brand_awareness: 'No direct sales ask. Build top-of-mind recognition for the agent/brand. Share value or perspective.',
-  lead_magnet: 'Offer a free resource (guide, computation, checklist). CTA is to message/comment to receive it.',
-  social_proof: 'Build trust through testimonial or success story framing. CTA is soft — invite the reader to imagine themselves in the same outcome.',
-  lifestyle: 'Community-building or relatable content. No sales ask. Encourage comments and engagement.',
+const GOALS: Record<string, { instruction: string; adjectives: string }> = {
+  listing_promotion: {
+    instruction: 'Drive interest in this specific property. Highlight 2-3 standout features. End with a clear CTA to inquire or view.',
+    adjectives: 'aspirational, polished, confident, evocative',
+  },
+  open_house: {
+    instruction: 'Invite the reader to a specific open house. Include date/time placeholder if not provided. CTA is to RSVP or attend.',
+    adjectives: 'urgent, welcoming, time-sensitive, inviting',
+  },
+  tripping_invite: {
+    instruction: 'Invite the reader to a site visit (tripping). Emphasize seeing the property in person. CTA is to book a tripping schedule.',
+    adjectives: 'experiential, sensory, persuasive, action-oriented',
+  },
+  event_promotion: {
+    instruction: 'Promote an event (seminar, launch, expo). Focus on what attendees gain. CTA is to register or attend.',
+    adjectives: 'energetic, professional, anticipation-building',
+  },
+  brand_awareness: {
+    instruction: 'No direct sales ask. Build top-of-mind recognition for the agent/brand. Share value or perspective.',
+    adjectives: 'thoughtful, authoritative, value-driven',
+  },
+  lead_magnet: {
+    instruction: 'Offer a free resource (guide, computation, checklist). CTA is to message/comment to receive it.',
+    adjectives: 'helpful, generous, no-pressure, useful',
+  },
+  social_proof: {
+    instruction: 'Build trust through testimonial or success story framing. CTA is soft — invite the reader to imagine themselves in the same outcome.',
+    adjectives: 'credible, warm, story-driven, relatable',
+  },
+  lifestyle: {
+    instruction: 'Community-building or relatable content. No sales ask. Encourage comments and engagement.',
+    adjectives: 'warm, relatable, conversational, human',
+  },
 }
 
 const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
@@ -35,14 +60,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { prompt, language, goal } = await request.json()
+    const { prompt, language, goal, referenceUrl } = await request.json()
     if (!prompt) return NextResponse.json({ error: 'No prompt' }, { status: 400 })
-    if (!goal || !GOALS[goal as string]) {
+    const goalEntry = GOALS[goal as string]
+    if (!goal || !goalEntry) {
       return NextResponse.json({ error: `goal is required. Valid values: ${Object.keys(GOALS).join(', ')}` }, { status: 400 })
     }
 
     const langInstruction = LANGUAGE_INSTRUCTIONS[language as string] ?? LANGUAGE_INSTRUCTIONS.english
-    const fullPrompt = `${prompt}\n\nGOAL: ${GOALS[goal as string]}\n\nLANGUAGE: ${langInstruction}`
+
+    // URL reference — fetch if provided, never blocks generation on failure
+    let referenceBlock = ''
+    let warning: string | undefined
+    if (referenceUrl && typeof referenceUrl === 'string' && referenceUrl.trim()) {
+      const result = await fetchUrlContent(referenceUrl.trim())
+      if (result.ok) {
+        referenceBlock = `\n\nREFERENCE SOURCE (facts only — do not invent details not present here, do not contradict these facts):\n${result.text}`
+      } else {
+        warning = URL_WARNING_MESSAGES[result.reason]
+      }
+    }
+
+    const fullPrompt = [
+      prompt,
+      `GOAL: ${goalEntry.instruction}`,
+      `STYLE: Use language that feels ${goalEntry.adjectives}. The factual content comes from the reference and the focus/audience inputs — these adjectives describe the register, not new facts.`,
+      `LANGUAGE: ${langInstruction}`,
+      referenceBlock.trim(),
+    ].filter(Boolean).join('\n\n')
 
     let text: string
     try {
@@ -55,7 +100,7 @@ export async function POST(request: NextRequest) {
     // Parse JSON from response (fence-strip kept for Anthropic fallback)
     const clean = text.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(clean)
-    return NextResponse.json(parsed)
+    return NextResponse.json(warning ? { ...parsed, warning } : parsed)
   } catch (error) {
     console.error('Content generation error:', error)
     return NextResponse.json({ error: 'Generation failed' }, { status: 500 })
