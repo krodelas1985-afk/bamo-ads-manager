@@ -5,9 +5,9 @@ const N8N_WEBHOOK = 'https://n8n-bahaymo.onrender.com/webhook/bamo-video-generat
 
 /**
  * POST /api/creatives/generate
- * Authenticated proxy in front of the n8n Creatomate webhook.
- * Why: the webhook was previously called directly from the browser with no
- * auth — anyone could trigger renders and burn Creatomate credits.
+ * Inserts a pending creative_jobs row, fires n8n async (5s timeout),
+ * returns 202 immediately. Render status is tracked via
+ * GET /api/creatives/[id]/status.
  */
 export async function POST(req: NextRequest) {
   const supabase = await createServerSupabaseClient()
@@ -26,7 +26,6 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
 
-  // client_admin may only generate for their own client
   if (profile.role === 'client_admin') {
     body.client_id = profile.client_id
   }
@@ -37,23 +36,71 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'template_id is required' }, { status: 400 })
   }
 
-  const res = await fetch(N8N_WEBHOOK, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-bamo-secret': process.env.N8N_WEBHOOK_SECRET ?? '',
-    },
-    body: JSON.stringify(body),
-  })
+  // Insert pending job row before calling n8n — gives us a stable ID to
+  // return to the browser regardless of how long n8n takes.
+  const { data: job, error: insertError } = await supabase
+    .from('creative_jobs')
+    .insert({
+      client_id: body.client_id,
+      job_type: 'creatomate_video',
+      request_payload: body,
+      status: 'pending',
+    })
+    .select('id')
+    .single()
 
-  const text = await res.text()
-  if (!res.ok) {
-    return NextResponse.json({ error: `Generation webhook error ${res.status}: ${text.slice(0, 300)}` }, { status: 502 })
+  if (insertError || !job) {
+    return NextResponse.json({ error: 'Failed to create job record' }, { status: 500 })
   }
+
+  // Call n8n with a 5-second timeout — just long enough to confirm it
+  // accepted the job. n8n should be configured to respond immediately
+  // (see manual n8n step in the async render migration notes).
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5000)
 
   try {
-    return NextResponse.json(JSON.parse(text))
+    const res = await fetch(N8N_WEBHOOK, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bamo-secret': process.env.N8N_WEBHOOK_SECRET ?? '',
+      },
+      body: JSON.stringify({ ...body, creative_job_id: job.id }),
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+
+    if (!res.ok) {
+      await supabase
+        .from('creative_jobs')
+        .update({ status: 'failed', error_message: 'Failed to dispatch render job' })
+        .eq('id', job.id)
+      return NextResponse.json(
+        { error: `Generation webhook error ${res.status}` },
+        { status: 502 }
+      )
+    }
   } catch {
-    return NextResponse.json({ error: 'Invalid response from generation webhook' }, { status: 502 })
+    clearTimeout(timeoutId)
+    await supabase
+      .from('creative_jobs')
+      .update({ status: 'failed', error_message: 'Failed to dispatch render job' })
+      .eq('id', job.id)
+    return NextResponse.json(
+      { error: 'Could not reach render service — please try again.' },
+      { status: 502 }
+    )
   }
+
+  // n8n acknowledged — mark processing and hand the job ID to the client
+  await supabase
+    .from('creative_jobs')
+    .update({ status: 'processing' })
+    .eq('id', job.id)
+
+  return NextResponse.json(
+    { creativeId: job.id, status: 'processing' },
+    { status: 202 }
+  )
 }

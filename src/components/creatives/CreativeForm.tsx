@@ -9,8 +9,8 @@ import {
 import Link from 'next/link'
 
 const GENERATE_ENDPOINT = '/api/creatives/generate'
-const POLL_INTERVAL_MS    = 3000
-const MAX_POLL_ATTEMPTS   = 40
+const POLL_INTERVAL_MS  = 3000
+const MAX_POLL_ATTEMPTS = 200  // 200 × 3s = 10 min max
 
 const SOURCES = [
   { id: 'canva',      label: 'Canva',      sub: 'Branded template', icon: Layout,    ready: false },
@@ -147,35 +147,41 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
   }
 
   // ── Polling ────────────────────────────────────────────────────────────────
-  function pollJob(renderJobId: string, attempts = 0) {
+  function pollJobById(jobRowId: string, attempts = 0) {
     if (attempts >= MAX_POLL_ATTEMPTS) {
       setGenerating(false)
       setError('Render timed out — check your Creatomate dashboard.')
       return
     }
+    // Exponential backoff: 3s for first 20 polls (60s), 5s next 20, then 10s
+    const delay = attempts < 20 ? POLL_INTERVAL_MS : attempts < 40 ? 5000 : 10000
     pollTimer.current = setTimeout(async () => {
-      const { data: job } = await supabase
-        .from('creative_jobs')
-        .select('status, error_message')
-        .eq('job_id', renderJobId)
-        .maybeSingle()
+      try {
+        const res = await fetch(`/api/creatives/${jobRowId}/status`)
+        if (!res.ok) { pollJobById(jobRowId, attempts + 1); return }
+        const job = await res.json()
 
-      if (job?.status === 'completed') {
-        const { data: creative } = await supabase
-          .from('creatives')
-          .select('id, asset_url, thumbnail_url')
-          .eq('job_id', renderJobId)
-          .maybeSingle()
-        setCreativeResult({ url: creative?.asset_url ?? '', thumb: creative?.thumbnail_url ?? undefined, id: creative?.id })
-        setGenerating(false)
-        setGenerated(true)
-      } else if (job?.status === 'failed') {
-        setGenerating(false)
-        setError(job.error_message ?? 'Creatomate render failed.')
-      } else {
-        pollJob(renderJobId, attempts + 1)
+        // If still pending after 30s, n8n likely didn't start the render
+        if (attempts >= 10 && job.status === 'pending') {
+          setGenerating(false)
+          setError('Render didn\'t start — check the n8n workflow.')
+          return
+        }
+
+        if (job.status === 'completed') {
+          setCreativeResult({ url: job.renderUrl ?? '', thumb: job.thumbnailUrl, id: job.id })
+          setGenerating(false)
+          setGenerated(true)
+        } else if (job.status === 'failed') {
+          setGenerating(false)
+          setError(job.errorMessage ?? 'Creatomate render failed.')
+        } else {
+          pollJobById(jobRowId, attempts + 1)
+        }
+      } catch {
+        pollJobById(jobRowId, attempts + 1)
       }
-    }, POLL_INTERVAL_MS)
+    }, delay)
   }
 
   // ── Generate ───────────────────────────────────────────────────────────────
@@ -234,10 +240,10 @@ export default function CreativeForm({ clientId, clientName, clients = [], templ
         }
 
         const data = await res.json()
-        if (!data.creatomate_render_id) throw new Error('No render ID returned from webhook.')
+        if (!data.creativeId) throw new Error('No job ID returned — please try again.')
 
-        setGeneratingStep('Rendering video… this takes ~30–60s')
-        pollJob(data.creatomate_render_id)
+        setGeneratingStep('Render queued — usually 30–90s. You can leave this page; it will appear in your asset library when ready.')
+        pollJobById(data.creativeId)
 
       } else {
         setGenerating(false)
