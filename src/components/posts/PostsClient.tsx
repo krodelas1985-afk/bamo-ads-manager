@@ -564,7 +564,7 @@ export default function PostsClient({
                 <div>
                   <label className="text-[10px] font-medium text-[#1A2E5A] mb-1 block">Tone</label>
                   <div className="flex flex-wrap gap-1">
-                    {['professional', 'friendly', 'taglish', 'urgent', 'luxury'].map(t => (
+                    {['professional', 'friendly', 'urgent', 'luxury'].map(t => (
                       <button
                         key={t}
                         onClick={() => setAiTone(t)}

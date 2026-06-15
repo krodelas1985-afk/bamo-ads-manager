@@ -18,7 +18,6 @@ const GOALS: Record<string, string> = {
 const TONES: Record<string, string> = {
   professional: 'Polished, trustworthy, broker-grade professional English.',
   friendly: 'Warm, approachable, conversational. Like a helpful kapitbahay who knows real estate.',
-  taglish: 'Natural Taglish — conversational Filipino-English mix the way Metro Manila and CALABARZON agents actually post. Keep it tasteful, not cringe.',
   urgent: 'Energetic and time-sensitive. Push action without being spammy.',
   luxury: 'Elegant, understated, aspirational. Fewer words, more weight.',
 }
