@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from '@/lib/ai-provider'
 import { fetchUrlContent, URL_WARNING_MESSAGES } from '@/lib/fetch-url-content'
+import {
+  fetchReferenceDocuments,
+  buildReferenceDocumentBlocks,
+  MAX_REFERENCE_DOCUMENTS,
+} from '@/lib/reference-documents'
 
 const GOALS: Record<string, { instruction: string; adjectives: string }> = {
   listing_promotion: {
@@ -53,14 +58,14 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, client_id')
       .eq('id', user.id)
       .single()
     if (!profile || (profile.role !== 'baymo_admin' && profile.role !== 'client_admin')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { prompt, language, goal, referenceUrl } = await request.json()
+    const { prompt, language, goal, referenceUrl, referenceDocumentIds, clientId: bodyClientId } = await request.json()
     if (!prompt) return NextResponse.json({ error: 'No prompt' }, { status: 400 })
     const goalEntry = GOALS[goal as string]
     if (!goal || !goalEntry) {
@@ -72,13 +77,38 @@ export async function POST(request: NextRequest) {
     // URL reference — fetch if provided, never blocks generation on failure
     let referenceBlock = ''
     let warning: string | undefined
+    let urlRefChars = 0
     if (referenceUrl && typeof referenceUrl === 'string' && referenceUrl.trim()) {
       const result = await fetchUrlContent(referenceUrl.trim())
       if (result.ok) {
-        referenceBlock = `\n\nREFERENCE SOURCE (facts only — do not invent details not present here, do not contradict these facts):\n${result.text}`
+        referenceBlock = `REFERENCE SOURCE (facts only — do not invent details not present here, do not contradict these facts):\n${result.text}`
+        urlRefChars = result.text.length
       } else {
         warning = URL_WARNING_MESSAGES[result.reason]
       }
+    }
+
+    // Reference documents — saved docs from the client's Asset Library.
+    let documentBlock = ''
+    let docWarning: string | undefined
+    const docIds: string[] = Array.isArray(referenceDocumentIds)
+      ? referenceDocumentIds.filter((x: unknown): x is string => typeof x === 'string' && x.length > 0)
+      : []
+    if (docIds.length > 0) {
+      if (docIds.length > MAX_REFERENCE_DOCUMENTS) {
+        return NextResponse.json({ error: `At most ${MAX_REFERENCE_DOCUMENTS} reference documents per generation` }, { status: 400 })
+      }
+      const clientId = profile.role === 'client_admin' ? profile.client_id : bodyClientId
+      if (!clientId) {
+        return NextResponse.json({ error: 'clientId is required when using reference documents' }, { status: 400 })
+      }
+      const fetched = await fetchReferenceDocuments(docIds, clientId)
+      if (!fetched.ok) {
+        return NextResponse.json({ error: fetched.error }, { status: 403 })
+      }
+      const built = buildReferenceDocumentBlocks(fetched.docs, urlRefChars)
+      documentBlock = built.block
+      docWarning = built.warning
     }
 
     const fullPrompt = [
@@ -86,7 +116,8 @@ export async function POST(request: NextRequest) {
       `GOAL: ${goalEntry.instruction}`,
       `STYLE: Use language that feels ${goalEntry.adjectives}. The factual content comes from the reference and the focus/audience inputs — these adjectives describe the register, not new facts.`,
       `LANGUAGE: ${langInstruction}`,
-      referenceBlock.trim(),
+      referenceBlock,
+      documentBlock,
     ].filter(Boolean).join('\n\n')
 
     let text: string
@@ -100,7 +131,8 @@ export async function POST(request: NextRequest) {
     // Parse JSON from response (fence-strip kept for Anthropic fallback)
     const clean = text.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(clean)
-    return NextResponse.json(warning ? { ...parsed, warning } : parsed)
+    const combinedWarning = [warning, docWarning].filter(Boolean).join(' ')
+    return NextResponse.json(combinedWarning ? { ...parsed, warning: combinedWarning } : parsed)
   } catch (error) {
     console.error('Content generation error:', error)
     return NextResponse.json({ error: 'Generation failed' }, { status: 500 })

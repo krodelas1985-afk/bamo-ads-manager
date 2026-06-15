@@ -3,6 +3,11 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { generateText } from '@/lib/ai-provider'
 import { fetchUrlContent, URL_WARNING_MESSAGES } from '@/lib/fetch-url-content'
+import {
+  fetchReferenceDocuments,
+  buildReferenceDocumentBlocks,
+  MAX_REFERENCE_DOCUMENTS,
+} from '@/lib/reference-documents'
 
 export const maxDuration = 60
 
@@ -94,6 +99,7 @@ async function handle(request: NextRequest) {
     instructions?: string | null
     language?: string
     referenceUrl?: string | null
+    referenceDocumentIds?: string[] | null
   }
   try {
     body = await request.json()
@@ -141,13 +147,34 @@ async function handle(request: NextRequest) {
   // URL reference — fetch if provided, never blocks generation on failure
   let referenceBlock = ''
   let warning: string | undefined
+  let urlRefChars = 0
   if (body.referenceUrl && body.referenceUrl.trim()) {
     const result = await fetchUrlContent(body.referenceUrl.trim())
     if (result.ok) {
       referenceBlock = `\nREFERENCE SOURCE (facts only — do not invent details not present here, do not contradict these facts):\n${result.text}`
+      urlRefChars = result.text.length
     } else {
       warning = URL_WARNING_MESSAGES[result.reason]
     }
+  }
+
+  // Reference documents — saved docs from the client's Asset Library.
+  let documentBlock = ''
+  let docWarning: string | undefined
+  const docIds: string[] = Array.isArray(body.referenceDocumentIds)
+    ? body.referenceDocumentIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : []
+  if (docIds.length > 0) {
+    if (docIds.length > MAX_REFERENCE_DOCUMENTS) {
+      return NextResponse.json({ error: `At most ${MAX_REFERENCE_DOCUMENTS} reference documents per generation` }, { status: 400 })
+    }
+    const fetched = await fetchReferenceDocuments(docIds, clientId)
+    if (!fetched.ok) {
+      return NextResponse.json({ error: fetched.error }, { status: 403 })
+    }
+    const built = buildReferenceDocumentBlocks(fetched.docs, urlRefChars)
+    documentBlock = built.block
+    docWarning = built.warning
   }
 
   const listingBlock = listing
@@ -172,7 +199,7 @@ STYLE: Use language that feels ${goalEntry.adjectives}. The factual content come
 TONE: ${TONES[tone]}
 LANGUAGE: ${langInstruction}
 ${referenceBlock}
-
+${documentBlock ? `\n${documentBlock}\n` : ''}
 RULES:
 - Philippine market context: prices in PHP, local geography, Pag-IBIG/bank financing references only if relevant.
 - Never invent prices, sizes, or features not given above.
@@ -234,6 +261,9 @@ Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
     cta: parsed.cta ?? null,
     suggested_link: listing?.listing_url ?? null,
     suggested_media: listing?.primary_photo_url ?? null,
-    ...(warning ? { warning } : {}),
+    ...((() => {
+      const w = [warning, docWarning].filter(Boolean).join(' ')
+      return w ? { warning: w } : {}
+    })()),
   })
 }

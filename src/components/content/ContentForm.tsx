@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Wand2, Sparkles, Building, Save, Image as ImageIcon, Globe, ChevronDown } from 'lucide-react'
 import MarketplacePicker, { type MarketplaceListing } from './MarketplacePicker'
+import ReferenceDocumentSelect from './ReferenceDocumentSelect'
 
 const PLATFORMS = ['facebook', 'instagram', 'linkedin']
 const TONES = ['professional', 'casual', 'urgent', 'aspirational']
@@ -46,6 +47,7 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
   const [marketplaceListing, setMarketplaceListing] = useState<MarketplaceListing | null>(null)
   const [showMarketplacePicker, setShowMarketplacePicker] = useState(false)
   const [referenceUrl, setReferenceUrl] = useState('')
+  const [referenceDocumentIds, setReferenceDocumentIds] = useState<string[]>([])
   const [urlWarning, setUrlWarning] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -77,7 +79,14 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
       const response = await fetch('/api/generate-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, language, goal, referenceUrl: referenceUrl.trim() || undefined }),
+        body: JSON.stringify({
+          prompt,
+          language,
+          goal,
+          referenceUrl: referenceUrl.trim() || undefined,
+          referenceDocumentIds: referenceDocumentIds.length > 0 ? referenceDocumentIds : undefined,
+          clientId: activeClientId,
+        }),
       })
 
       if (!response.ok) throw new Error('Generation failed')
@@ -445,6 +454,13 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
               Paste a webpage URL for the AI to reference. Source-of-truth: AI will only use facts from the page. Some sites (esp. modern listing portals) may fail to load — you'll see a warning if so.
             </p>
           </div>
+
+          {/* Reference documents */}
+          <ReferenceDocumentSelect
+            clientId={activeClientId}
+            selectedIds={referenceDocumentIds}
+            onChange={setReferenceDocumentIds}
+          />
 
           <button
             onClick={handleGenerate}

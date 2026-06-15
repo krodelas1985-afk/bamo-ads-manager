@@ -6,6 +6,7 @@ import {
   BarChart2, Edit, Clock, Copy, Trash2, CheckCircle, AlertTriangle, RotateCcw, X, Sparkles, Image as ImageIcon
 } from 'lucide-react'
 import AssetPicker, { type PickerItem } from './AssetPicker'
+import ReferenceDocumentSelect from '../content/ReferenceDocumentSelect'
 
 const STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-[#E8EBF3] text-[#1A2E5A]',
@@ -143,6 +144,7 @@ export default function PostsClient({
   const [aiListingId, setAiListingId] = useState('')
   const [aiInstructions, setAiInstructions] = useState('')
   const [aiReferenceUrl, setAiReferenceUrl] = useState('')
+  const [aiReferenceDocumentIds, setAiReferenceDocumentIds] = useState<string[]>([])
   const [aiUrlWarning, setAiUrlWarning] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
 
@@ -278,6 +280,7 @@ export default function PostsClient({
           listing_id: aiListingId || null,
           instructions: aiInstructions || null,
           referenceUrl: aiReferenceUrl.trim() || undefined,
+          referenceDocumentIds: aiReferenceDocumentIds.length > 0 ? aiReferenceDocumentIds : undefined,
         }),
       })
       const json = await res.json()
@@ -637,6 +640,12 @@ export default function PostsClient({
                     Paste a webpage URL for the AI to reference. Source-of-truth: AI will only use facts from the page. Some sites (esp. modern listing portals) may fail to load — you'll see a warning if so.
                   </p>
                 </div>
+                <ReferenceDocumentSelect
+                  clientId={selectedClientId || null}
+                  selectedIds={aiReferenceDocumentIds}
+                  onChange={setAiReferenceDocumentIds}
+                  compact
+                />
                 <button
                   onClick={generateWithAI}
                   disabled={generating}

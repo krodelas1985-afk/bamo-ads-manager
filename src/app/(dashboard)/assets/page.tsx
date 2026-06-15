@@ -31,7 +31,7 @@ export default async function AssetsPage({
   const selectedClientId = isAdmin ? (searchParams?.client_id ?? null) : profile.client_id
   const clientFilter = selectedClientId ? { client_id: selectedClientId } : {}
 
-  const [{ data: uploads }, { data: creatives }, { data: clientList }] = await Promise.all([
+  const [{ data: uploads }, { data: creatives }, { data: clientList }, { data: referenceDocs }] = await Promise.all([
     supabase
       .from('client_assets')
       .select('*')
@@ -47,6 +47,13 @@ export default async function AssetsPage({
     isAdmin
       ? supabase.from('clients').select('id, name').order('name')
       : Promise.resolve({ data: null }),
+    selectedClientId
+      ? supabase
+          .from('client_reference_documents')
+          .select('id, filename, file_type, size_bytes, extracted_chars, truncated, created_at')
+          .eq('client_id', selectedClientId)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] }),
   ])
 
   const uploadAssets = (uploads ?? []).map(a => ({ ...a, source: 'upload' as const }))
@@ -106,6 +113,7 @@ export default async function AssetsPage({
           clientId={selectedClientId}
           storageUsedGB={Number(storageGB)}
           storageMaxGB={5}
+          referenceDocuments={referenceDocs ?? []}
         />
       </div>
     </div>

@@ -8,9 +8,11 @@ import {
   Megaphone, Globe, Send, LayoutGrid, List
 } from 'lucide-react'
 import Link from 'next/link'
+import ReferenceDocumentsPanel, { type ReferenceDocument } from './ReferenceDocumentsPanel'
 
 const FOLDERS = [
   { id: 'general', label: 'All Assets', icon: '📦' },
+  { id: 'documents', label: 'Documents', icon: '📄' },
   { id: 'listings', label: 'Listings', icon: '🏠' },
   { id: 'team', label: 'Team / Agents', icon: '👥' },
   { id: 'branding', label: 'Branding', icon: '👑' },
@@ -58,9 +60,10 @@ interface Props {
   clientId: string | null
   storageUsedGB: number
   storageMaxGB: number
+  referenceDocuments: ReferenceDocument[]
 }
 
-export default function AssetLibraryClient({ assets: initialAssets, clientId, storageUsedGB, storageMaxGB }: Props) {
+export default function AssetLibraryClient({ assets: initialAssets, clientId, storageUsedGB, storageMaxGB, referenceDocuments }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -82,7 +85,9 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
   const storagePct = Math.min((storageUsedGB / storageMaxGB) * 100, 100)
 
   const folderCounts = FOLDERS.reduce((acc, f) => {
-    acc[f.id] = f.id === 'general' ? assets.length : assets.filter(a => a.folder === f.id).length
+    if (f.id === 'general') acc[f.id] = assets.length
+    else if (f.id === 'documents') acc[f.id] = referenceDocuments.length
+    else acc[f.id] = assets.filter(a => a.folder === f.id).length
     return acc
   }, {} as Record<string, number>)
 
@@ -277,6 +282,18 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden p-5 gap-3">
 
+        {folder === 'documents' ? (
+          <>
+            <div>
+              <div className="text-xl font-semibold text-[#1A2E5A]">Reference Documents</div>
+              <div className="text-xs text-gray-500 mt-0.5">Source-of-truth files the AI can ground its writing on</div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <ReferenceDocumentsPanel clientId={clientId} initialDocuments={referenceDocuments} />
+            </div>
+          </>
+        ) : (
+        <>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -554,6 +571,8 @@ export default function AssetLibraryClient({ assets: initialAssets, clientId, st
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   )
