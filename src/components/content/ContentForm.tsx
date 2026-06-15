@@ -37,6 +37,7 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
 
   const [platform, setPlatform] = useState('facebook')
   const [tone, setTone] = useState('professional')
+  const [language, setLanguage] = useState<'english' | 'taglish' | 'tagalog'>('english')
   const [audience, setAudience] = useState('')
   const [topic, setTopic] = useState('')
   const [selectedListing, setSelectedListing] = useState<Listing | null>(listings[0] ?? null)
@@ -72,7 +73,7 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
       const response = await fetch('/api/generate-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, language }),
       })
 
       if (!response.ok) throw new Error('Generation failed')
@@ -349,6 +350,28 @@ export default function ContentForm({ clientId, clients = [], listings }: Conten
                   }`}
                 >
                   {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Language */}
+          <div>
+            <label className="text-xs font-medium text-[#1A2E5A] mb-1.5 block">Language</label>
+            <div className="flex gap-1.5">
+              {([
+                { value: 'english', label: 'English' },
+                { value: 'taglish', label: 'Taglish' },
+                { value: 'tagalog', label: 'Filipino' },
+              ] as const).map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setLanguage(value)}
+                  className={`flex-1 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    language === value ? 'bg-[#1F3C88] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {label}
                 </button>
               ))}
             </div>

@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from '@/lib/ai-provider'
 
+const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
+  english: 'Write in natural, professional English suited to Philippine real estate marketing.',
+  taglish: 'Write in conversational Taglish — natural code-switching between Filipino and English the way real estate agents actually post on Facebook in the Philippines. Not forced or mechanical alternation sentence-by-sentence.',
+  tagalog: 'Sumulat sa natural na conversational Filipino — hindi pormal o parang textbook; everyday spoken register.',
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Auth gate — this route was previously open to the internet,
@@ -18,12 +24,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { prompt } = await request.json()
+    const { prompt, language } = await request.json()
     if (!prompt) return NextResponse.json({ error: 'No prompt' }, { status: 400 })
+
+    const langInstruction = LANGUAGE_INSTRUCTIONS[language as string] ?? LANGUAGE_INSTRUCTIONS.english
+    const fullPrompt = `${prompt}\n\nLANGUAGE: ${langInstruction}`
 
     let text: string
     try {
-      text = await generateText({ prompt, maxTokens: 1000 })
+      text = await generateText({ prompt: fullPrompt, maxTokens: 1000 })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI generation failed'
       return NextResponse.json({ error: msg }, { status: 500 })

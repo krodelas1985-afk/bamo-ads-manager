@@ -23,9 +23,15 @@ const TONES: Record<string, string> = {
   luxury: 'Elegant, understated, aspirational. Fewer words, more weight.',
 }
 
+const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
+  english: 'Write in natural, professional English suited to Philippine real estate marketing.',
+  taglish: 'Write in conversational Taglish — natural code-switching between Filipino and English the way real estate agents actually post on Facebook in the Philippines. Not forced or mechanical alternation sentence-by-sentence.',
+  tagalog: 'Sumulat sa natural na conversational Filipino — hindi pormal o parang textbook; everyday spoken register.',
+}
+
 /**
  * POST /api/posts/generate
- * Body: { client_id, goal, tone, platform?, post_type?, listing_id?, instructions? }
+ * Body: { client_id, goal, tone, platform?, post_type?, listing_id?, instructions?, language? }
  * Builds the prompt server-side, calls the AI provider, saves the result to
  * ad_content (so it appears in "Pull from Content" and stays traceable),
  * and returns the generated fields for the composer.
@@ -61,6 +67,7 @@ async function handle(request: NextRequest) {
     post_type?: string
     listing_id?: string | null
     instructions?: string | null
+    language?: string
   }
   try {
     body = await request.json()
@@ -74,6 +81,7 @@ async function handle(request: NextRequest) {
   const goal = body.goal && GOALS[body.goal] ? body.goal : 'lead_generation'
   const tone = body.tone && TONES[body.tone] ? body.tone : 'friendly'
   const platform = body.platform === 'instagram' ? 'instagram' : 'facebook'
+  const langInstruction = LANGUAGE_INSTRUCTIONS[body.language as string] ?? LANGUAGE_INSTRUCTIONS.english
 
   const admin = createAdminClient()
 
@@ -117,6 +125,7 @@ PROPERTY DETAILS (use the real numbers, do not invent any):
 
 GOAL: ${GOALS[goal]}
 TONE: ${TONES[tone]}
+LANGUAGE: ${langInstruction}
 ${listingBlock}
 ${body.instructions?.trim() ? `ADDITIONAL INSTRUCTIONS FROM THE CLIENT: ${body.instructions.trim()}` : ''}
 

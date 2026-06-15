@@ -139,6 +139,7 @@ export default function PostsClient({
   const [aiOpen, setAiOpen] = useState(false)
   const [aiGoal, setAiGoal] = useState('new_listing')
   const [aiTone, setAiTone] = useState('friendly')
+  const [aiLanguage, setAiLanguage] = useState<'english' | 'taglish' | 'tagalog'>('english')
   const [aiListingId, setAiListingId] = useState('')
   const [aiInstructions, setAiInstructions] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -268,6 +269,7 @@ export default function PostsClient({
           client_id: isAdmin ? selectedClientId : undefined,
           goal: aiGoal,
           tone: aiTone,
+          language: aiLanguage,
           platform: platforms.includes('facebook') ? 'facebook' : 'instagram',
           post_type: postType,
           listing_id: aiListingId || null,
@@ -571,6 +573,26 @@ export default function PostsClient({
                         }`}
                       >
                         {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-[#1A2E5A] mb-1 block">Language</label>
+                  <div className="flex gap-1">
+                    {([
+                      { value: 'english', label: 'English' },
+                      { value: 'taglish', label: 'Taglish' },
+                      { value: 'tagalog', label: 'Filipino' },
+                    ] as const).map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => setAiLanguage(value)}
+                        className={`flex-1 py-0.5 rounded-full text-[10px] font-medium ${
+                          aiLanguage === value ? 'bg-[#1F3C88] text-white' : 'border border-black/10 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {label}
                       </button>
                     ))}
                   </div>
